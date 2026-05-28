@@ -1,0 +1,210 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # --- Correctness & Bug Prevention ---
+    - errcheck         # unchecked errors
+    - govet            # suspicious constructs (shadows, printf mismatches, etc.)
+    - ineffassign      # assignments to vars that are never read
+    - staticcheck      # comprehensive static analysis (SA*, S*, ST*, QF*)
+    - unused           # unused constants, variables, functions, types
+    - errorlint        # proper errors.Is/As usage and %w wrapping
+    - nilerr           # returning nil where non-nil error was checked
+    - nilnesserr       # returning different nil value in error path
+    - exhaustive       # missing enum cases in switch statements
+    - durationcheck    # two durations multiplied together (should be dur * int)
+    - forcetypeassert  # type assertions without ok check
+    - fatcontext       # nested contexts in loops (goroutine leak vector)
+    - copyloopvar      # loop variable capture in closures
+    - noctx            # HTTP requests without context (future REST API)
+    - bodyclose        # unclosed HTTP response bodies
+
+    # --- Security ---
+    - gosec            # security-oriented checks (SQL injection, hardcoded creds, etc.)
+    - bidichk          # dangerous unicode bidi character sequences
+
+    # --- Code Quality ---
+    - gocritic         # multi-purpose: diagnostics, style, performance
+    - revive           # configurable golint replacement
+    - unconvert        # unnecessary type conversions
+    - unparam          # unused function parameters
+    - predeclared      # shadowing of Go predeclared identifiers
+    - reassign         # package variable reassignment
+    - wastedassign     # assignments that are immediately overwritten or never read
+    - recvcheck        # receiver type consistency (pointer vs value)
+    - musttag          # missing struct tags for (un)marshaled structs
+    - nakedret         # naked returns in non-trivial functions
+
+    # --- Modern Go Idioms ---
+    - intrange         # use integer range in for loops (Go 1.22+)
+    - modernize        # modern Go idioms and simplifications
+    - usestdlibvars    # prefer stdlib constants (http.StatusOK, time.Monday, etc.)
+
+    # --- Logging ---
+    - sloglint         # consistent slog key-value usage
+    - loggercheck      # validates structured logger arguments
+
+    # --- Performance (critical for real-time packet processing) ---
+    - prealloc         # suggest slice preallocation
+    - perfsprint       # faster fmt alternatives in hot paths
+
+    # --- Style & Readability ---
+    - misspell         # commonly misspelled English words
+    - goconst          # repeated string literals that should be constants
+    - gocyclo          # cyclomatic complexity gate
+    - dupword          # duplicate words in comments/strings
+    - whitespace       # unnecessary newlines at func/block boundaries
+    - gocheckcompilerdirectives  # valid //go: directives
+    - nolintlint       # well-formed nolint directives
+
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - checkPrivateReceivers
+            - sayRepetitiveInsteadOfStutters
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: var-naming
+        - name: range
+        - name: receiver-naming
+        - name: indent-error-flow
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+        - name: waitgroup-by-value
+        - name: unconditional-recursion
+        - name: defer
+          arguments:
+            - - call-chain
+              - loop
+              - return
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        # Too opinionated for this codebase style:
+        - hugeParam          # struct-by-value is fine for small config structs
+        - rangeValCopy       # often negligible, prealloc handles hot paths
+        - ifElseChain        # switch preference is subjective
+
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    nakedret:
+      max-func-lines: 5
+
+    sloglint:
+      kv-only: true          # enforce key-value pairs (no positional args)
+      attr-only: false       # allow string keys (not just slog.Attr)
+
+    perfsprint:
+      int-conversion: true
+      err-error: true
+      errorf: true
+      sprintf1: true
+
+    errorlint:
+      errorf: true
+      errorf-multi: true
+      asserts: true
+      comparison: true
+
+    gosec:
+      excludes:
+        - G104  # handled by errcheck
+        - G304  # file path from variable (needed for config loading)
+
+    unparam:
+      check-exported: false
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - goconst
+          - gocyclo
+          - unparam
+          - fatcontext
+          - forcetypeassert
+          - perfsprint
+          - dupword
+
+      - path: internal/parser/
+        linters:
+          - gocyclo
+
+      - path: internal/parser/
+        text: "avoid package names that conflict"
+        linters:
+          - revive
+
+      - path: internal/version/
+        text: "avoid package names that conflict"
+        linters:
+          - revive
+
+      - path: internal/testutil/
+        linters:
+          - gosec
+          - unparam
+
+      - path: internal/capture/monitor_unsupported\.go
+        linters:
+          - revive
+
+      - path: internal/capture/monitor_darwin\.go
+        linters:
+          - revive
+          - gosec
+          - noctx
+
+      - path: internal/platform/capabilities_(darwin|linux|others)\.go
+        linters:
+          - revive
+
+      - path: internal/capture/capture\.go
+        text: "CaptureHandle"
+        linters:
+          - revive
+
+      - linters:
+          - errcheck
+        text: 'Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*printf?|os\.(Un)?Setenv). is not checked'
+
+      # exhaustive: allow default case to cover future enum additions
+      - linters:
+          - exhaustive
+        text: "missing cases"
+        path: cmd/
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

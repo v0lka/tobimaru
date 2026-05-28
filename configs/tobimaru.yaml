@@ -1,0 +1,45 @@
+# Tobimaru WiFi Watchdog configuration
+#
+# Platform-specific notes:
+#
+#   Linux:
+#     - interface: typically wlan0, wlp2s0, or similar (use `iw dev` to list)
+#     - dwell: 300ms is fine for fast channel switching via iw
+#
+#   macOS:
+#     - interface: typically en0 (use `ifconfig` to find the Wi-Fi interface)
+#     - dwell: recommended 2s or more — airport channel switching has 1-3s overhead
+#     - The airport utility must be installed:
+#         sudo ln -s /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport /usr/local/bin/airport
+#     - Must be run as root (BPF device permissions)
+#     - Cannot be connected to WiFi and capture simultaneously on the same adapter
+#     - No frame injection (active countermeasures not available)
+#     - See docs/development/macos-setup.md for detailed setup instructions
+
+log:
+  level: info    # debug, info, warn, error
+  format: text   # text, json
+
+monitor:
+  interface: ""  # WiFi interface name (e.g., wlan0)
+  capture:
+    snaplen: 65535
+    buffer_size: 2097152
+    promiscuous: true
+    timeout: 100ms
+  channel_hopping:
+    enabled: true
+    dwell: 300ms
+    weighted_dwell:
+      enabled: true
+      primary_channels: [1, 6, 11]   # channels with extended dwell time
+      multiplier: 2.5                 # time multiplier for primary channels
+    channels_2ghz: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+    # channels_5ghz: [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165]
+    include_5ghz: false
+
+detection:
+  enabled: true                   # master switch for detection engine
+  dedup_window: 30s               # suppress duplicate alerts within this window
+  alert_buffer_size: 256          # buffered alerts channel capacity
+  # Rule-specific configs will be added in tasks 2.3–2.7
