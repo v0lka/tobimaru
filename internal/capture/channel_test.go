@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -147,5 +148,114 @@ func TestChannelHopperReset(t *testing.T) {
 	ch, _ := hopper.Next()
 	if ch != 1 {
 		t.Errorf("expected channel 1 after reset, got %d", ch)
+	}
+}
+
+// TestChannelHopperRunBackoff verifies that consecutive setFn failures trigger
+// exponential backoff and that a single success resets the counter.
+func TestChannelHopperRunBackoff(t *testing.T) {
+	cfg := config.ChannelHoppingConfig{
+		Enabled:      true,
+		Dwell:        1 * time.Millisecond,
+		Channels2GHz: []int{1, 6},
+	}
+	hopper, err := NewChannelHopper(&cfg)
+	if err != nil {
+		t.Fatalf("NewChannelHopper failed: %v", err)
+	}
+
+	// Always-fail setFn: count calls, observe inter-call delay growing.
+	var callCount int
+	var lastCall time.Time
+	var maxDelay time.Duration
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	hopper.Run(ctx, func(_ int) error {
+		now := time.Now()
+		if !lastCall.IsZero() {
+			d := now.Sub(lastCall)
+			if d > maxDelay {
+				maxDelay = d
+			}
+		}
+		lastCall = now
+		callCount++
+		return errors.New("always fails")
+	})
+
+	// We should have entered backoff (delay > base dwell of 1ms).
+	if callCount < consecutiveFailuresThreshold {
+		t.Errorf("expected at least %d calls before backoff kicks in, got %d", consecutiveFailuresThreshold, callCount)
+	}
+	if maxDelay <= 1*time.Millisecond {
+		t.Errorf("expected backoff to grow delay above base dwell, max observed %v", maxDelay)
+	}
+}
+
+// TestChannelHopperRunBackoffResetsOnSuccess verifies that a single successful
+// setFn call resets the failure counter and exits backoff.
+func TestChannelHopperRunBackoffResetsOnSuccess(t *testing.T) {
+	cfg := config.ChannelHoppingConfig{
+		Enabled:      true,
+		Dwell:        1 * time.Millisecond,
+		Channels2GHz: []int{1, 6},
+	}
+	hopper, err := NewChannelHopper(&cfg)
+	if err != nil {
+		t.Fatalf("NewChannelHopper failed: %v", err)
+	}
+
+	var calls int
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	hopper.Run(ctx, func(_ int) error {
+		calls++
+		// Fail several times to trigger backoff, then succeed once.
+		if calls <= consecutiveFailuresThreshold+1 {
+			return errors.New("fail")
+		}
+		return nil
+	})
+
+	if calls < consecutiveFailuresThreshold+2 {
+		t.Errorf("expected at least %d calls (failures + recovery), got %d", consecutiveFailuresThreshold+2, calls)
+	}
+}
+
+// TestNewChannelHopperPrimaryChannelsCopy verifies that NewChannelHopper does
+// not retain a reference to the caller's PrimaryChannels slice.
+func TestNewChannelHopperPrimaryChannelsCopy(t *testing.T) {
+	primary := []int{6}
+	cfg := config.ChannelHoppingConfig{
+		Enabled:      true,
+		Dwell:        100 * time.Millisecond,
+		Channels2GHz: []int{1, 6},
+		WeightedDwell: config.WeightedDwellConfig{
+			Enabled:         true,
+			PrimaryChannels: primary,
+			Multiplier:      2.0,
+		},
+	}
+	hopper, err := NewChannelHopper(&cfg)
+	if err != nil {
+		t.Fatalf("NewChannelHopper failed: %v", err)
+	}
+
+	// Mutate the caller's slice; hopper should be unaffected.
+	primary[0] = 11
+
+	// Iterate channels and check dwell times: channel 6 should still have
+	// the multiplied dwell because hopper made its own copy.
+	for range hopper.ChannelCount() {
+		ch, dwell := hopper.Next()
+		if ch == 6 && dwell != 200*time.Millisecond {
+			t.Errorf("expected channel 6 dwell=200ms (multiplied), got %v — slice ownership leaked", dwell)
+		}
+		if ch == 11 && dwell == 200*time.Millisecond {
+			t.Error("channel 11 unexpectedly got multiplied dwell — slice ownership leaked")
+		}
 	}
 }

@@ -16,7 +16,7 @@ func New(cfg config.LogConfig) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: level}
 
 	var handler slog.Handler
-	if cfg.Format == "json" {
+	if cfg.Format == config.LogFormatJSON {
 		handler = slog.NewJSONHandler(os.Stdout, opts)
 	} else {
 		handler = slog.NewTextHandler(os.Stdout, opts)
@@ -25,23 +25,15 @@ func New(cfg config.LogConfig) *slog.Logger {
 	return slog.New(handler)
 }
 
-// Log level string constants used in configuration.
-const (
-	LevelDebug = "debug"
-	LevelInfo  = "info"
-	LevelWarn  = "warn"
-	LevelError = "error"
-)
-
 func parseLevel(s string) slog.Level {
 	switch s {
-	case LevelDebug:
+	case config.LogLevelDebug:
 		return slog.LevelDebug
-	case LevelInfo:
+	case config.LogLevelInfo:
 		return slog.LevelInfo
-	case LevelWarn:
+	case config.LogLevelWarn:
 		return slog.LevelWarn
-	case LevelError:
+	case config.LogLevelError:
 		return slog.LevelError
 	default:
 		return slog.LevelInfo

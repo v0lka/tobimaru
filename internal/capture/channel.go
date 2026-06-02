@@ -13,6 +13,14 @@ import (
 // ErrHoppingDisabled is returned by NewChannelHopper when channel hopping is disabled.
 var ErrHoppingDisabled = errors.New("channel hopping is disabled")
 
+// consecutiveFailuresThreshold is the number of consecutive failed channel
+// switches after which the hopper enters exponential backoff mode.
+const consecutiveFailuresThreshold = 5
+
+// maxBackoffDwell caps the dwell time during backoff to prevent unbounded
+// growth on permanently broken interfaces.
+const maxBackoffDwell = 30 * time.Second
+
 // channelEntry represents a WiFi channel with its associated dwell time.
 type channelEntry struct {
 	channel int
@@ -22,7 +30,6 @@ type channelEntry struct {
 // ChannelHopper manages channel rotation for WiFi capture across multiple
 // frequency bands with configurable dwell times and weighted strategies.
 type ChannelHopper struct {
-	cfg config.ChannelHoppingConfig
 	chs []channelEntry
 	idx int
 }
@@ -30,20 +37,26 @@ type ChannelHopper struct {
 // NewChannelHopper creates a ChannelHopper from the given configuration.
 // It builds the channel list from 2.4 GHz and optionally 5 GHz channels,
 // applying weighted dwell time multipliers to primary channels.
+//
+// Slice ownership: the returned hopper does not retain references to the
+// caller's PrimaryChannels/Channels2GHz/Channels5GHz slices. All needed data
+// is copied into an independent internal slice.
 func NewChannelHopper(cfg *config.ChannelHoppingConfig) (*ChannelHopper, error) {
 	if !cfg.Enabled {
 		return nil, ErrHoppingDisabled
 	}
+
+	// Defensive copy: PrimaryChannels is read multiple times below, and we
+	// want to ensure the hopper does not share ownership with the caller.
+	primary := append([]int(nil), cfg.WeightedDwell.PrimaryChannels...)
 
 	var entries []channelEntry
 
 	// Add 2.4 GHz channels.
 	for _, ch := range cfg.Channels2GHz {
 		dwell := cfg.Dwell
-		if cfg.WeightedDwell.Enabled {
-			if slices.Contains(cfg.WeightedDwell.PrimaryChannels, ch) {
-				dwell = time.Duration(float64(dwell) * cfg.WeightedDwell.Multiplier)
-			}
+		if cfg.WeightedDwell.Enabled && slices.Contains(primary, ch) {
+			dwell = time.Duration(float64(dwell) * cfg.WeightedDwell.Multiplier)
 		}
 		entries = append(entries, channelEntry{channel: ch, dwell: dwell})
 	}
@@ -51,8 +64,7 @@ func NewChannelHopper(cfg *config.ChannelHoppingConfig) (*ChannelHopper, error) 
 	// Add 5 GHz channels if enabled.
 	if cfg.Include5GHz {
 		for _, ch := range cfg.Channels5GHz {
-			dwell := cfg.Dwell
-			entries = append(entries, channelEntry{channel: ch, dwell: dwell})
+			entries = append(entries, channelEntry{channel: ch, dwell: cfg.Dwell})
 		}
 	}
 
@@ -61,7 +73,6 @@ func NewChannelHopper(cfg *config.ChannelHoppingConfig) (*ChannelHopper, error) 
 	}
 
 	return &ChannelHopper{
-		cfg: *cfg,
 		chs: entries,
 	}, nil
 }
@@ -85,29 +96,49 @@ func (h *ChannelHopper) ChannelCount() int {
 
 // Run executes channel hopping in a loop, calling setFn for each channel change.
 // It blocks until ctx is canceled.
+//
+// Failure handling: on consecutive setFn errors beyond
+// consecutiveFailuresThreshold, the hopper enters exponential backoff,
+// doubling the effective dwell time up to maxBackoffDwell. This prevents
+// log flooding and reduces load on a broken interface. The first successful
+// switch resets both the failure counter and the backoff multiplier.
 func (h *ChannelHopper) Run(ctx context.Context, setFn func(channel int) error) {
 	h.Reset()
 	var consecutiveFailures int
+	var backoff time.Duration // 0 = no backoff active
 	for {
 		channel, dwell := h.Next()
 
-		if err := setFn(channel); err != nil {
+		err := setFn(channel)
+		switch {
+		case err != nil:
 			consecutiveFailures++
-			switch {
-			case consecutiveFailures >= 5:
-				slog.Error("channel hop failing repeatedly",
+			if consecutiveFailures >= consecutiveFailuresThreshold {
+				if backoff == 0 {
+					backoff = dwell
+				}
+				backoff = min(backoff*2, maxBackoffDwell)
+				dwell = backoff
+				slog.Error("channel hop failing repeatedly; backing off",
 					"consecutive_failures", consecutiveFailures,
 					"channel", channel,
+					"backoff", backoff,
 					"error", err,
 				)
-			default:
+			} else {
 				slog.Warn("channel hop failed, skipping channel",
 					"channel", channel,
 					"error", err,
 				)
 			}
-		} else {
+		default:
+			if backoff != 0 || consecutiveFailures > 0 {
+				slog.Info("channel hop recovered",
+					"channel", channel,
+				)
+			}
 			consecutiveFailures = 0
+			backoff = 0
 		}
 
 		timer := time.NewTimer(dwell)

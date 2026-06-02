@@ -3,15 +3,15 @@ package config
 import "errors"
 
 var validLogLevels = map[string]bool{
-	"debug":         true,
-	DefaultLogLevel: true,
-	"warn":          true,
-	"error":         true,
+	LogLevelDebug: true,
+	LogLevelInfo:  true,
+	LogLevelWarn:  true,
+	LogLevelError: true,
 }
 
 var validLogFormats = map[string]bool{
-	DefaultLogFormat: true,
-	"json":           true,
+	LogFormatText: true,
+	LogFormatJSON: true,
 }
 
 func validate(cfg *Config) error {

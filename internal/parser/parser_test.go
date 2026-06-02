@@ -458,36 +458,36 @@ func TestParseBlockAck(t *testing.T) {
 // TestParseIEForSSID verifies raw IE SSID extraction edge cases.
 func TestParseIEForSSID(t *testing.T) {
 	// Empty data.
-	if got := parseIEForSSID(nil); got != "" {
-		t.Errorf("expected empty string for nil data, got %q", got)
+	if got, present := parseIEForSSID(nil); got != "" || present {
+		t.Errorf("expected (\"\", false) for nil data, got (%q, %v)", got, present)
 	}
 
 	// Single byte (too short).
-	if got := parseIEForSSID([]byte{0x00}); got != "" {
-		t.Errorf("expected empty string for short data, got %q", got)
+	if got, present := parseIEForSSID([]byte{0x00}); got != "" || present {
+		t.Errorf("expected (\"\", false) for short data, got (%q, %v)", got, present)
 	}
 
-	// SSID IE with zero length (hidden network).
-	if got := parseIEForSSID([]byte{0x00, 0x00}); got != "" {
-		t.Errorf("expected empty string for zero-length SSID, got %q", got)
+	// SSID IE with zero length (hidden network) — present=true, ssid="".
+	if got, present := parseIEForSSID([]byte{0x00, 0x00}); got != "" || !present {
+		t.Errorf("expected (\"\", true) for zero-length SSID (hidden), got (%q, %v)", got, present)
 	}
 
 	// Valid SSID IE.
 	data := []byte{0x00, 0x04, 'T', 'e', 's', 't'}
-	if got := parseIEForSSID(data); got != "Test" {
-		t.Errorf("expected 'Test', got %q", got)
+	if got, present := parseIEForSSID(data); got != "Test" || !present {
+		t.Errorf("expected (\"Test\", true), got (%q, %v)", got, present)
 	}
 
 	// Non-SSID IE followed by SSID IE.
 	data = []byte{0x01, 0x02, 0x82, 0x84, 0x00, 0x03, 'F', 'o', 'o'}
-	if got := parseIEForSSID(data); got != "Foo" {
-		t.Errorf("expected 'Foo', got %q", got)
+	if got, present := parseIEForSSID(data); got != "Foo" || !present {
+		t.Errorf("expected (\"Foo\", true), got (%q, %v)", got, present)
 	}
 
 	// Truncated IE (length exceeds remaining data).
 	data = []byte{0x00, 0x10, 'T', 'e'}
-	if got := parseIEForSSID(data); got != "" {
-		t.Errorf("expected empty string for truncated IE, got %q", got)
+	if got, present := parseIEForSSID(data); got != "" || present {
+		t.Errorf("expected (\"\", false) for truncated IE, got (%q, %v)", got, present)
 	}
 }
 
@@ -564,6 +564,76 @@ func TestFrameTypeStringAll(t *testing.T) {
 		if got := ft.String(); got != expected {
 			t.Errorf("FrameType(%d).String() = %q, want %q", ft, got, expected)
 		}
+	}
+}
+
+// TestParseRadioTapEmpty verifies parseRadioTap handles a RadioTap header with
+// no Present flags or values without panicking.
+func TestParseRadioTapEmpty(t *testing.T) {
+	f := &ParsedFrame{}
+	rt := &layers.RadioTap{}
+	parseRadioTap(f, rt) // must not panic
+	if f.RSSI != 0 || f.ChannelFreq != 0 {
+		t.Errorf("expected zero RSSI/ChannelFreq for empty RadioTap, got RSSI=%d ChannelFreq=%d", f.RSSI, f.ChannelFreq)
+	}
+}
+
+// TestParseIEsRawCap verifies parseIEsRaw stops at maxIEsPerFrame to prevent
+// unbounded memory growth from malformed frames.
+func TestParseIEsRawCap(t *testing.T) {
+	// Build a long sequence of zero-length IEs with unique IDs.
+	// Each IE is 2 bytes (id + len), so maxIEsPerFrame*2 + extras bytes
+	// represent maxIEsPerFrame+extras IEs.
+	const extras = 50
+	data := make([]byte, 0, (maxIEsPerFrame+extras)*2)
+	for i := range maxIEsPerFrame + extras {
+		data = append(data, byte(i%256), 0x00)
+	}
+
+	f := &ParsedFrame{InfoElements: make(map[uint8][]byte)}
+	parseIEsRaw(data, f)
+
+	if len(f.InfoElements) > maxIEsPerFrame {
+		t.Errorf("expected at most %d IEs, got %d", maxIEsPerFrame, len(f.InfoElements))
+	}
+}
+
+// TestParseIEForSSIDHidden verifies that an SSID IE with zero length is
+// reported as present (hidden network), distinguishing it from a missing IE.
+func TestParseIEForSSIDHidden(t *testing.T) {
+	// IE: id=0 (SSID), len=0 (hidden).
+	data := []byte{0x00, 0x00}
+	ssid, present := parseIEForSSID(data)
+	if !present {
+		t.Error("expected present=true for zero-length SSID IE")
+	}
+	if ssid != "" {
+		t.Errorf("expected empty SSID for hidden network, got %q", ssid)
+	}
+
+	// No SSID IE at all.
+	dataNo := []byte{0x01, 0x01, 0xff} // some other IE
+	ssid2, present2 := parseIEForSSID(dataNo)
+	if present2 {
+		t.Error("expected present=false when no SSID IE is in data")
+	}
+	if ssid2 != "" {
+		t.Errorf("expected empty SSID, got %q", ssid2)
+	}
+}
+
+// TestParseSSIDPresentBeacon verifies SSIDPresent is set on a parsed beacon.
+func TestParseSSIDPresentBeacon(t *testing.T) {
+	pcapData := testutil.BuildBeaconPcap(testutil.SSID("VisibleNet"))
+	frame := parsePcapFrame(t, pcapData)
+	if frame == nil {
+		return
+	}
+	if !frame.SSIDPresent {
+		t.Error("expected SSIDPresent=true for beacon with SSID IE")
+	}
+	if frame.SSID != "VisibleNet" {
+		t.Errorf("expected SSID=VisibleNet, got %q", frame.SSID)
 	}
 }
 

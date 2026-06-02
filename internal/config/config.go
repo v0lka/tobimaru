@@ -41,10 +41,24 @@ type DetectionConfig struct {
 	AlertBufferSize int `yaml:"alert_buffer_size"`
 }
 
+// Log level string constants used in configuration.
+const (
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
+)
+
+// Log format string constants used in configuration.
+const (
+	LogFormatText = "text"
+	LogFormatJSON = "json"
+)
+
 // Default values for configuration fields.
 const (
-	DefaultLogLevel        = "info"
-	DefaultLogFormat       = "text"
+	DefaultLogLevel        = LogLevelInfo
+	DefaultLogFormat       = LogFormatText
 	DefaultSnaplen         = 65535
 	DefaultBufferSize      = 2097152 // 2 MB
 	DefaultTimeout         = 100 * time.Millisecond

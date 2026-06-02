@@ -3,10 +3,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/vkochetkov/tobimaru/internal/capture"
@@ -17,6 +19,9 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/shutdown"
 	"github.com/vkochetkov/tobimaru/internal/version"
 )
+
+// frameStatsInterval controls how often consumeFrames reports capture stats.
+const frameStatsInterval = 5 * time.Second
 
 func main() {
 	flagConfig := flag.String("config", "configs/tobimaru.yaml", "path to configuration file")
@@ -79,14 +84,37 @@ func main() {
 		slog.Warn("detection enabled but no rules registered; alerts will not be generated")
 	}
 
+	// Track consumer goroutines so shutdown waits for their final log lines.
+	var consumerWG sync.WaitGroup
+
 	if cfg.Detection.Enabled {
 		engine.Run(signalCtx, pipeline.Frames())
-		go consumeAlerts(signalCtx, engine.Alerts())
-		sm.Register("detector_stop", func() error { return nil })
+		consumerWG.Go(func() {
+			consumeAlerts(signalCtx, engine.Alerts())
+		})
 	} else {
 		// Detection disabled — continue with simple frame consumer for dev/debug.
-		go consumeFrames(signalCtx, pipeline.Frames())
+		consumerWG.Go(func() {
+			consumeFrames(signalCtx, pipeline.Frames())
+		})
 	}
+
+	// Wait for consumer goroutines to drain their channels and log final
+	// stats before shutdown completes. The hook respects the shutdown
+	// context's deadline.
+	sm.Register("consumer_stop", func() error {
+		done := make(chan struct{})
+		go func() {
+			consumerWG.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			return nil
+		case <-time.After(10 * time.Second):
+			return errors.New("consumer goroutines did not exit within 10s")
+		}
+	})
 
 	// Wait for shutdown signal.
 	<-signalCtx.Done()
@@ -110,7 +138,10 @@ func main() {
 // This is used when detection is disabled for development and debugging.
 func consumeFrames(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 	var count uint64
-	var lastReport time.Time
+	var lastFrame *parser.ParsedFrame
+
+	ticker := time.NewTicker(frameStatsInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -119,16 +150,18 @@ func consumeFrames(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 			return
 		case frame, ok := <-frames:
 			if !ok {
+				slog.Info("frame consumer stopped", "total_frames", count)
 				return
 			}
 			count++
-			if time.Since(lastReport) >= 5*time.Second {
+			lastFrame = frame
+		case <-ticker.C:
+			if lastFrame != nil {
 				slog.Debug("capture stats",
 					"frames_received", count,
-					"current_type", frame.FrameType.String(),
-					"current_channel", frame.Channel,
+					"current_type", lastFrame.FrameType.String(),
+					"current_channel", lastFrame.Channel,
 				)
-				lastReport = time.Now()
 			}
 		}
 	}
@@ -146,6 +179,7 @@ func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent) {
 			return
 		case event, ok := <-alerts:
 			if !ok {
+				slog.Info("alert consumer stopped", "total_alerts", count)
 				return
 			}
 			count++
