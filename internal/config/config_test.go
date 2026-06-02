@@ -173,6 +173,9 @@ monitor:
 	if cfg.Monitor.Capture.BufferSize != DefaultBufferSize {
 		t.Errorf("expected buffer_size %d, got %d", DefaultBufferSize, cfg.Monitor.Capture.BufferSize)
 	}
+	if cfg.Monitor.Capture.FrameBufferSize != DefaultFrameBufferSize {
+		t.Errorf("expected frame_buffer_size %d, got %d", DefaultFrameBufferSize, cfg.Monitor.Capture.FrameBufferSize)
+	}
 }
 
 func TestZeroDwellTimeUsesDefault(t *testing.T) {

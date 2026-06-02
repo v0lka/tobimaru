@@ -7,9 +7,7 @@ import (
 
 func TestStringDefault(t *testing.T) {
 	// Reset to defaults (in case ldflags injected values in test build).
-	Version = "dev"
-	Commit = "unknown"
-	Date = "unknown"
+	SetVersion("dev", "unknown", "unknown")
 
 	s := String()
 	if !strings.Contains(s, "Tobimaru vdev") {
@@ -24,9 +22,7 @@ func TestStringDefault(t *testing.T) {
 }
 
 func TestStringRelease(t *testing.T) {
-	Version = "1.0.0"
-	Commit = "abc1234"
-	Date = "2026-05-27T10:00:00Z"
+	SetVersion("1.0.0", "abc1234", "2026-05-27T10:00:00Z")
 
 	s := String()
 	expected := "Tobimaru v1.0.0 (commit: abc1234, built: 2026-05-27T10:00:00Z)"
@@ -35,7 +31,5 @@ func TestStringRelease(t *testing.T) {
 	}
 
 	// Reset for other tests.
-	Version = "dev"
-	Commit = "unknown"
-	Date = "unknown"
+	SetVersion("dev", "unknown", "unknown")
 }

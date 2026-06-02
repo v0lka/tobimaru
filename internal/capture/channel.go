@@ -10,6 +10,9 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/config"
 )
 
+// ErrHoppingDisabled is returned by NewChannelHopper when channel hopping is disabled.
+var ErrHoppingDisabled = errors.New("channel hopping is disabled")
+
 // channelEntry represents a WiFi channel with its associated dwell time.
 type channelEntry struct {
 	channel int
@@ -29,7 +32,7 @@ type ChannelHopper struct {
 // applying weighted dwell time multipliers to primary channels.
 func NewChannelHopper(cfg *config.ChannelHoppingConfig) (*ChannelHopper, error) {
 	if !cfg.Enabled {
-		return nil, errors.New("channel hopping is disabled")
+		return nil, ErrHoppingDisabled
 	}
 
 	var entries []channelEntry
@@ -84,14 +87,27 @@ func (h *ChannelHopper) ChannelCount() int {
 // It blocks until ctx is canceled.
 func (h *ChannelHopper) Run(ctx context.Context, setFn func(channel int) error) {
 	h.Reset()
+	var consecutiveFailures int
 	for {
 		channel, dwell := h.Next()
 
 		if err := setFn(channel); err != nil {
-			slog.Warn("channel hop failed, skipping channel",
-				"channel", channel,
-				"error", err,
-			)
+			consecutiveFailures++
+			switch {
+			case consecutiveFailures >= 5:
+				slog.Error("channel hop failing repeatedly",
+					"consecutive_failures", consecutiveFailures,
+					"channel", channel,
+					"error", err,
+				)
+			default:
+				slog.Warn("channel hop failed, skipping channel",
+					"channel", channel,
+					"error", err,
+				)
+			}
+		} else {
+			consecutiveFailures = 0
 		}
 
 		timer := time.NewTimer(dwell)

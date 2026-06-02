@@ -2,7 +2,10 @@
 // packet capture via pcap, channel hopping, and the frame pipeline.
 package capture
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 // ErrNotSupported is returned when a platform does not support monitor mode.
 var ErrNotSupported = errors.New("monitor mode is not supported on this platform")
@@ -12,13 +15,13 @@ var ErrNotSupported = errors.New("monitor mode is not supported on this platform
 // managed and monitor modes and to set the operating channel.
 type MonitorModeManager interface {
 	// EnableMonitor switches the given interface to monitor mode.
-	EnableMonitor(iface string) error
+	EnableMonitor(ctx context.Context, iface string) error
 
 	// DisableMonitor returns the given interface to managed mode.
-	DisableMonitor(iface string) error
+	DisableMonitor(ctx context.Context, iface string) error
 
 	// SetChannel sets the interface's operating channel.
-	SetChannel(iface string, channel int) error
+	SetChannel(ctx context.Context, iface string, channel int) error
 
 	// IsSupported reports whether monitor mode is available on this platform.
 	IsSupported() bool

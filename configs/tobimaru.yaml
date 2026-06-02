@@ -25,6 +25,7 @@ monitor:
   capture:
     snaplen: 65535
     buffer_size: 2097152
+    frame_buffer_size: 1024
     promiscuous: true
     timeout: 100ms
   channel_hopping:

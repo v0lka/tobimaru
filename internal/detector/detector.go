@@ -21,12 +21,13 @@ const maxDedupEntries = 10000
 // parsed 802.11 frames to all registered rules, deduplicates security events,
 // and emits alerts on a channel.
 type Engine struct {
-	rules       []Rule               // registered rules (immutable after Run)
-	alerts      chan *SecurityEvent  // buffered output channel
-	dedupWindow time.Duration        // deduplication time window
-	dedup       map[string]time.Time // dedup cache (key → last emission time)
-	mu          sync.Mutex           // guards dedup map
-	frameCount  atomic.Uint64        // total frames processed (for periodic sweep)
+	rules       []Rule                 // registered rules (immutable after Run)
+	alerts      chan *SecurityEvent    // buffered output channel
+	detCfg      config.DetectionConfig // full detection configuration
+	dedupWindow time.Duration          // deduplication time window
+	dedup       map[string]time.Time   // dedup cache (key → last emission time)
+	mu          sync.Mutex             // guards dedup map
+	frameCount  atomic.Uint64          // total frames processed (for periodic sweep)
 }
 
 // NewEngine creates a new detection engine from the detection configuration.
@@ -41,6 +42,7 @@ func NewEngine(cfg config.DetectionConfig) *Engine {
 	}
 	return &Engine{
 		alerts:      make(chan *SecurityEvent, bufSize),
+		detCfg:      cfg,
 		dedupWindow: dedupWindow,
 		dedup:       make(map[string]time.Time),
 	}
@@ -56,10 +58,7 @@ func (e *Engine) Register(rule Rule) error {
 			return fmt.Errorf("rule %q is already registered", rule.Name())
 		}
 	}
-	if err := rule.Init(config.DetectionConfig{
-		DedupWindow:     e.dedupWindow,
-		AlertBufferSize: cap(e.alerts),
-	}); err != nil {
+	if err := rule.Init(e.detCfg); err != nil {
 		return fmt.Errorf("rule %q init failed: %w", rule.Name(), err)
 	}
 	e.rules = append(e.rules, rule)
@@ -94,6 +93,11 @@ func (e *Engine) Run(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 			}
 		}
 	}()
+}
+
+// RuleCount returns the number of registered detection rules.
+func (e *Engine) RuleCount() int {
+	return len(e.rules)
 }
 
 // Alerts returns a read-only channel of security events emitted by the engine.

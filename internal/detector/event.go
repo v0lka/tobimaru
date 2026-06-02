@@ -70,6 +70,7 @@ type SecurityEvent struct {
 	Duration time.Duration
 
 	// Metadata holds arbitrary rule-specific key-value data.
+	// Must not be mutated after the event is returned from Rule.Process().
 	Metadata map[string]any
 
 	// Description is a human-readable summary of the event.

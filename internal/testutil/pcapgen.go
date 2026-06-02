@@ -204,9 +204,9 @@ const (
 
 func buildRadioTap(o *options) []byte {
 	present := uint32(rtPresentChannel | rtPresentDBMAntennaSignal)
-	length := uint16(14)
 
-	buf := make([]byte, length)
+	buf := make([]byte, 14)
+	length := uint16(len(buf))
 	binary.LittleEndian.PutUint16(buf[2:4], length)
 	binary.LittleEndian.PutUint32(buf[4:8], present)
 

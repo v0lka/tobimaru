@@ -26,7 +26,7 @@ cmd/tobimaru (orchestrator — imports everything)
 - `cmd/tobimaru` is the ONLY consumer of `internal/` packages
 - No `internal/` package imports `cmd/`
 - Circular dependencies are forbidden
-- Leaf packages (`config`, `shutdown`, `version`, `parser`, `platform`) have zero project imports
+- Leaf packages (`config`, `shutdown`, `version`, `parser`, `platform`, `testutil`) have zero project imports
 
 ### Directory Layout
 
@@ -56,7 +56,7 @@ docs/                  Documentation
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.26+
 - GNU Make
 - golangci-lint v2 (for linting)
 
@@ -123,7 +123,7 @@ Key testing practices:
 - Place test files adjacent to the code they test (`foo_test.go` next to `foo.go`)
 - Use table-driven tests where applicable
 - Test both success and error paths
-- For capture/parser tests, use `testutil.GeneratePcap()` to create synthetic frames
+- For capture/parser tests, use `testutil.BuildBeaconPcap()`, `testutil.BuildDeauthPcap()`, etc. to create synthetic frames
 
 ## Linting
 

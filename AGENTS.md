@@ -6,11 +6,11 @@ This file provides guidance for AI coding agents working on this project.
 
 Tobimaru is a Go-based WiFi intrusion detection system (WIDS). It operates as a daemon that monitors wireless traffic, detects attacks, and provides monitoring through a REST API and web dashboard.
 
-The project is structured in Phases (0-12) as defined in `docs/development/wifi-watchdog-roadmap.md`. Phase 0 (Foundation) is complete.
+The project is structured in Phases (0-12) as defined in `docs/development/wifi-watchdog-roadmap.md`. Phases 0 (Foundation) and 1 (Capture Engine) are complete. Phase 2 (Detection Engine) is in progress — rule interface and deduplication are implemented; specific detection rules are upcoming.
 
 ## Language and Tooling
 
-- **Language:** Go 1.22+
+- **Language:** Go 1.26+
 - **Module path:** `github.com/vkochetkov/tobimaru`
 - **Build system:** GNU Make (`Makefile`)
 - **Linter:** golangci-lint v2 (config: `.golangci.yml`)
