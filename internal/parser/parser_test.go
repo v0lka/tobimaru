@@ -27,28 +27,28 @@ func TestParseBeacon(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeBeacon {
-		t.Errorf("expected FrameTypeBeacon, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeBeacon", frame.FrameType)
 	}
 	if frame.SSID != ssidStr {
-		t.Errorf("expected SSID %q, got %q", ssidStr, frame.SSID)
+		t.Errorf("got SSID %q, want %q", frame.SSID, ssidStr)
 	}
 	if frame.RSSI != -42 {
-		t.Errorf("expected RSSI -42, got %d", frame.RSSI)
+		t.Errorf("got RSSI %d, want -42", frame.RSSI)
 	}
 	if frame.Channel != 6 {
-		t.Errorf("expected channel 6, got %d", frame.Channel)
+		t.Errorf("got channel %d, want 6", frame.Channel)
 	}
 	if frame.SequenceNum != 100 {
-		t.Errorf("expected sequence 100, got %d", frame.SequenceNum)
+		t.Errorf("got sequence %d, want 100", frame.SequenceNum)
 	}
 	if len(frame.SrcMAC) != 6 {
-		t.Errorf("expected source MAC, got %v", frame.SrcMAC)
+		t.Errorf("got source MAC %v, want 6-byte MAC", frame.SrcMAC)
 	}
 	if len(frame.BSSID) != 6 {
-		t.Errorf("expected BSSID, got %v", frame.BSSID)
+		t.Errorf("got BSSID %v, want 6-byte MAC", frame.BSSID)
 	}
 	if frame.BeaconInterval != 100 {
-		t.Errorf("expected beacon interval 100, got %d", frame.BeaconInterval)
+		t.Errorf("got beacon interval %d, want 100", frame.BeaconInterval)
 	}
 }
 
@@ -66,16 +66,16 @@ func TestParseProbeRequest(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeProbeRequest {
-		t.Errorf("expected FrameTypeProbeRequest, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeProbeRequest", frame.FrameType)
 	}
 	if frame.SSID != "MyWiFi" {
-		t.Errorf("expected SSID MyWiFi, got %q", frame.SSID)
+		t.Errorf("got SSID %q, want MyWiFi", frame.SSID)
 	}
 	if frame.RSSI != -55 {
-		t.Errorf("expected RSSI -55, got %d", frame.RSSI)
+		t.Errorf("got RSSI %d, want -55", frame.RSSI)
 	}
 	if frame.Channel != 1 {
-		t.Errorf("expected channel 1, got %d", frame.Channel)
+		t.Errorf("got channel %d, want 1", frame.Channel)
 	}
 }
 
@@ -93,13 +93,13 @@ func TestParseDeauth(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeDeauth {
-		t.Errorf("expected FrameTypeDeauth, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeDeauth", frame.FrameType)
 	}
 	if frame.ReasonCode != 7 {
-		t.Errorf("expected reason code 7, got %d", frame.ReasonCode)
+		t.Errorf("got reason code %d, want 7", frame.ReasonCode)
 	}
 	if frame.RSSI != -60 {
-		t.Errorf("expected RSSI -60, got %d", frame.RSSI)
+		t.Errorf("got RSSI %d, want -60", frame.RSSI)
 	}
 }
 
@@ -115,10 +115,10 @@ func TestParseDisassoc(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeDisassoc {
-		t.Errorf("expected FrameTypeDisassoc, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeDisassoc", frame.FrameType)
 	}
 	if frame.ReasonCode != 3 {
-		t.Errorf("expected reason code 3, got %d", frame.ReasonCode)
+		t.Errorf("got reason code %d, want 3", frame.ReasonCode)
 	}
 }
 
@@ -132,10 +132,10 @@ func TestParseAuth(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeAuth {
-		t.Errorf("expected FrameTypeAuth, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeAuth", frame.FrameType)
 	}
 	if frame.AuthSeq != 1 {
-		t.Errorf("expected auth seq 1, got %d", frame.AuthSeq)
+		t.Errorf("got auth seq %d, want 1", frame.AuthSeq)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestParseMultiFrame(t *testing.T) {
 
 	frames := parsePcapFrames(t, pcapData)
 	if len(frames) < 3 {
-		t.Fatalf("expected at least 3 frames, got %d", len(frames))
+		t.Fatalf("got %d frames, want at least 3", len(frames))
 	}
 
 	expected := []FrameType{FrameTypeBeacon, FrameTypeProbeRequest, FrameTypeDeauth}
@@ -156,7 +156,7 @@ func TestParseMultiFrame(t *testing.T) {
 			break
 		}
 		if frames[i].FrameType != ft {
-			t.Errorf("frame %d: expected %v, got %v", i, ft, frames[i].FrameType)
+			t.Errorf("frame %d: got %v, want %v", i, frames[i].FrameType, ft)
 		}
 	}
 }
@@ -243,19 +243,19 @@ func TestParseProbeResponse(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeProbeResponse {
-		t.Errorf("expected FrameTypeProbeResponse, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeProbeResponse", frame.FrameType)
 	}
 	if frame.SSID != "ProbeNet" {
-		t.Errorf("expected SSID ProbeNet, got %q", frame.SSID)
+		t.Errorf("got SSID %q, want ProbeNet", frame.SSID)
 	}
 	if frame.RSSI != -50 {
-		t.Errorf("expected RSSI -50, got %d", frame.RSSI)
+		t.Errorf("got RSSI %d, want -50", frame.RSSI)
 	}
 	if frame.Channel != 11 {
-		t.Errorf("expected channel 11, got %d", frame.Channel)
+		t.Errorf("got channel %d, want 11", frame.Channel)
 	}
 	if frame.BeaconInterval != 100 {
-		t.Errorf("expected beacon interval 100, got %d", frame.BeaconInterval)
+		t.Errorf("got beacon interval %d, want 100", frame.BeaconInterval)
 	}
 }
 
@@ -272,10 +272,10 @@ func TestParseAssocReq(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeAssocReq {
-		t.Errorf("expected FrameTypeAssocReq, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeAssocReq", frame.FrameType)
 	}
 	if frame.SSID != "AssocNet" {
-		t.Errorf("expected SSID AssocNet, got %q", frame.SSID)
+		t.Errorf("got SSID %q, want AssocNet", frame.SSID)
 	}
 }
 
@@ -291,10 +291,10 @@ func TestParseAssocResp(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeAssocResp {
-		t.Errorf("expected FrameTypeAssocResp, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeAssocResp", frame.FrameType)
 	}
 	if frame.Status != 0 {
-		t.Errorf("expected status 0, got %d", frame.Status)
+		t.Errorf("got status %d, want 0", frame.Status)
 	}
 }
 
@@ -308,7 +308,7 @@ func TestParseAction(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeAction {
-		t.Errorf("expected FrameTypeAction, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeAction", frame.FrameType)
 	}
 }
 
@@ -322,7 +322,7 @@ func TestParseRTS(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeRTS {
-		t.Errorf("expected FrameTypeRTS, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeRTS", frame.FrameType)
 	}
 }
 
@@ -336,7 +336,7 @@ func TestParseCTS(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeCTS {
-		t.Errorf("expected FrameTypeCTS, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeCTS", frame.FrameType)
 	}
 }
 
@@ -350,7 +350,7 @@ func TestParseACK(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeACK {
-		t.Errorf("expected FrameTypeACK, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeACK", frame.FrameType)
 	}
 }
 
@@ -364,7 +364,7 @@ func TestParseDataFrame(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeData {
-		t.Errorf("expected FrameTypeData, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeData", frame.FrameType)
 	}
 }
 
@@ -378,7 +378,7 @@ func TestParseNullDataFrame(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeNull {
-		t.Errorf("expected FrameTypeNull, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeNull", frame.FrameType)
 	}
 }
 
@@ -392,7 +392,7 @@ func TestParseQoSDataFrame(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeQoSData {
-		t.Errorf("expected FrameTypeQoSData, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeQoSData", frame.FrameType)
 	}
 }
 
@@ -409,7 +409,7 @@ func TestParseReassocReq(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeReassocReq {
-		t.Errorf("expected FrameTypeReassocReq, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeReassocReq", frame.FrameType)
 	}
 }
 
@@ -423,7 +423,7 @@ func TestParseReassocResp(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeReassocResp {
-		t.Errorf("expected FrameTypeReassocResp, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeReassocResp", frame.FrameType)
 	}
 }
 
@@ -437,7 +437,7 @@ func TestParseBlockAckReq(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeBlockAckReq {
-		t.Errorf("expected FrameTypeBlockAckReq, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeBlockAckReq", frame.FrameType)
 	}
 }
 
@@ -451,7 +451,7 @@ func TestParseBlockAck(t *testing.T) {
 	}
 
 	if frame.FrameType != FrameTypeBlockAck {
-		t.Errorf("expected FrameTypeBlockAck, got %v", frame.FrameType)
+		t.Errorf("got %v, want FrameTypeBlockAck", frame.FrameType)
 	}
 }
 
@@ -459,35 +459,35 @@ func TestParseBlockAck(t *testing.T) {
 func TestParseIEForSSID(t *testing.T) {
 	// Empty data.
 	if got, present := parseIEForSSID(nil); got != "" || present {
-		t.Errorf("expected (\"\", false) for nil data, got (%q, %v)", got, present)
+		t.Errorf("got (%q, %v) for nil data, want (\"\", false)", got, present)
 	}
 
 	// Single byte (too short).
 	if got, present := parseIEForSSID([]byte{0x00}); got != "" || present {
-		t.Errorf("expected (\"\", false) for short data, got (%q, %v)", got, present)
+		t.Errorf("got (%q, %v) for short data, want (\"\", false)", got, present)
 	}
 
 	// SSID IE with zero length (hidden network) — present=true, ssid="".
 	if got, present := parseIEForSSID([]byte{0x00, 0x00}); got != "" || !present {
-		t.Errorf("expected (\"\", true) for zero-length SSID (hidden), got (%q, %v)", got, present)
+		t.Errorf("got (%q, %v) for zero-length SSID (hidden), want (\"\", true)", got, present)
 	}
 
 	// Valid SSID IE.
 	data := []byte{0x00, 0x04, 'T', 'e', 's', 't'}
 	if got, present := parseIEForSSID(data); got != "Test" || !present {
-		t.Errorf("expected (\"Test\", true), got (%q, %v)", got, present)
+		t.Errorf("got (%q, %v), want (\"Test\", true)", got, present)
 	}
 
 	// Non-SSID IE followed by SSID IE.
 	data = []byte{0x01, 0x02, 0x82, 0x84, 0x00, 0x03, 'F', 'o', 'o'}
 	if got, present := parseIEForSSID(data); got != "Foo" || !present {
-		t.Errorf("expected (\"Foo\", true), got (%q, %v)", got, present)
+		t.Errorf("got (%q, %v), want (\"Foo\", true)", got, present)
 	}
 
 	// Truncated IE (length exceeds remaining data).
 	data = []byte{0x00, 0x10, 'T', 'e'}
 	if got, present := parseIEForSSID(data); got != "" || present {
-		t.Errorf("expected (\"\", false) for truncated IE, got (%q, %v)", got, present)
+		t.Errorf("got (%q, %v) for truncated IE, want (\"\", false)", got, present)
 	}
 }
 
@@ -574,7 +574,7 @@ func TestParseRadioTapEmpty(t *testing.T) {
 	rt := &layers.RadioTap{}
 	parseRadioTap(f, rt) // must not panic
 	if f.RSSI != 0 || f.ChannelFreq != 0 {
-		t.Errorf("expected zero RSSI/ChannelFreq for empty RadioTap, got RSSI=%d ChannelFreq=%d", f.RSSI, f.ChannelFreq)
+		t.Errorf("got RSSI=%d ChannelFreq=%d for empty RadioTap, want zero", f.RSSI, f.ChannelFreq)
 	}
 }
 
@@ -594,7 +594,7 @@ func TestParseIEsRawCap(t *testing.T) {
 	parseIEsRaw(data, f)
 
 	if len(f.InfoElements) > maxIEsPerFrame {
-		t.Errorf("expected at most %d IEs, got %d", maxIEsPerFrame, len(f.InfoElements))
+		t.Errorf("got %d IEs, want at most %d", len(f.InfoElements), maxIEsPerFrame)
 	}
 }
 
@@ -608,7 +608,7 @@ func TestParseIEForSSIDHidden(t *testing.T) {
 		t.Error("expected present=true for zero-length SSID IE")
 	}
 	if ssid != "" {
-		t.Errorf("expected empty SSID for hidden network, got %q", ssid)
+		t.Errorf("got SSID %q for hidden network, want empty", ssid)
 	}
 
 	// No SSID IE at all.
@@ -618,7 +618,7 @@ func TestParseIEForSSIDHidden(t *testing.T) {
 		t.Error("expected present=false when no SSID IE is in data")
 	}
 	if ssid2 != "" {
-		t.Errorf("expected empty SSID, got %q", ssid2)
+		t.Errorf("got SSID %q, want empty", ssid2)
 	}
 }
 
@@ -633,7 +633,7 @@ func TestParseSSIDPresentBeacon(t *testing.T) {
 		t.Error("expected SSIDPresent=true for beacon with SSID IE")
 	}
 	if frame.SSID != "VisibleNet" {
-		t.Errorf("expected SSID=VisibleNet, got %q", frame.SSID)
+		t.Errorf("got SSID %q, want VisibleNet", frame.SSID)
 	}
 }
 

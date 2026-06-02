@@ -48,7 +48,7 @@ func NewChannelHopper(cfg *config.ChannelHoppingConfig) (*ChannelHopper, error) 
 
 	// Defensive copy: PrimaryChannels is read multiple times below, and we
 	// want to ensure the hopper does not share ownership with the caller.
-	primary := append([]int(nil), cfg.WeightedDwell.PrimaryChannels...)
+	primary := slices.Clone(cfg.WeightedDwell.PrimaryChannels)
 
 	var entries []channelEntry
 

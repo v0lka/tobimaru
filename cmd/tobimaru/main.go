@@ -66,8 +66,7 @@ func main() {
 
 	// Register shutdown hooks.
 	sm.Register("capture_stop", func() error {
-		pipeline.Stop()
-		return nil
+		return pipeline.Stop(context.Background())
 	})
 
 	// Wire detection engine.
@@ -77,8 +76,8 @@ func main() {
 		"dedup_window", cfg.Detection.DedupWindow,
 	)
 
-	// Register rules (individual attack rules come in tasks 2.3-2.7).
-	// engine.Register(myRule)
+	// TODO(phase-2.3): register attack-detection rules here
+	// (deauth flood, disassoc flood, evil twin, ...).
 
 	if cfg.Detection.Enabled && engine.RuleCount() == 0 {
 		slog.Warn("detection enabled but no rules registered; alerts will not be generated")

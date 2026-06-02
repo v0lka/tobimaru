@@ -38,11 +38,11 @@ func TestRegisterAndShutdown(t *testing.T) {
 	// Hooks should execute in reverse order (LIFO).
 	expected := []string{"third", "second", "first"}
 	if len(order) != len(expected) {
-		t.Fatalf("expected %d hooks executed, got %d: %v", len(expected), len(order), order)
+		t.Fatalf("got %d hooks executed, want %d: %v", len(order), len(expected), order)
 	}
 	for i, name := range expected {
 		if order[i] != name {
-			t.Errorf("hook %d: expected %q, got %q", i, name, order[i])
+			t.Errorf("hook %d: got %q, want %q", i, order[i], name)
 		}
 	}
 }
@@ -62,10 +62,10 @@ func TestShutdownWithError(t *testing.T) {
 
 	err := m.Shutdown(ctx)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal("got nil, want error")
 	}
 	if !errors.Is(err, cleanupErr) {
-		t.Errorf("expected cleanup failed error, got: %v", err)
+		t.Errorf("got %v, want cleanup failed error", err)
 	}
 }
 
@@ -81,10 +81,10 @@ func TestShutdownTimeout(t *testing.T) {
 
 	err := m.Shutdown(ctx)
 	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+		t.Fatal("got nil, want timeout error")
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected DeadlineExceeded, got: %v", err)
+		t.Errorf("got %v, want DeadlineExceeded", err)
 	}
 }
 
@@ -108,12 +108,12 @@ func TestShutdownPartialErrors(t *testing.T) {
 
 	err := m.Shutdown(ctx)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal("got nil, want error")
 	}
 
 	// All hooks should have been attempted despite hook2's failure.
 	if len(executed) != 3 {
-		t.Errorf("expected 3 hooks executed, got %d: %v", len(executed), executed)
+		t.Errorf("got %d hooks executed, want 3: %v", len(executed), executed)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestWaitForSignal(t *testing.T) {
 	}
 
 	<-notifyCtx.Done()
-	if err := notifyCtx.Err(); err != context.Canceled {
-		t.Errorf("expected context.Canceled, got %v", err)
+	if err := notifyCtx.Err(); !errors.Is(err, context.Canceled) {
+		t.Errorf("got %v, want context.Canceled", err)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestEmptyManager(t *testing.T) {
 
 	err := m.Shutdown(ctx)
 	if err != nil {
-		t.Fatalf("expected nil error for empty manager, got: %v", err)
+		t.Fatalf("got %v, want nil error for empty manager", err)
 	}
 }
 

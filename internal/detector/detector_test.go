@@ -114,10 +114,10 @@ func TestEngineDispatch(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 5 {
-		t.Errorf("expected 5 alerts, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 5", len(alerts))
 	}
 	if rule.Calls() != 5 {
-		t.Errorf("expected 5 calls, got %d", rule.Calls())
+		t.Errorf("got %d calls, want 5", rule.Calls())
 	}
 }
 
@@ -146,13 +146,13 @@ func TestEngineMultipleRules(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 2 {
-		t.Errorf("expected 2 alerts (one per rule), got %d", len(alerts))
+		t.Errorf("got %d alerts, want 2 (one per rule)", len(alerts))
 	}
 	if rule1.Calls() != 1 {
-		t.Errorf("rule1 expected 1 call, got %d", rule1.Calls())
+		t.Errorf("rule1: got %d calls, want 1", rule1.Calls())
 	}
 	if rule2.Calls() != 1 {
-		t.Errorf("rule2 expected 1 call, got %d", rule2.Calls())
+		t.Errorf("rule2: got %d calls, want 1", rule2.Calls())
 	}
 
 	// Verify both types are present.
@@ -174,7 +174,7 @@ func TestEngineDuplicateRule(t *testing.T) {
 		t.Fatalf("first registration failed: %v", err)
 	}
 	if err := engine.Register(rule2); err == nil {
-		t.Error("expected error for duplicate rule name, got nil")
+		t.Error("got nil, want error for duplicate rule name")
 	}
 }
 
@@ -183,7 +183,7 @@ func TestEngineRuleInitError(t *testing.T) {
 	rule := &countingRule{name: "bad_rule", initErr: errors.New("config missing")}
 
 	if err := engine.Register(rule); err == nil {
-		t.Error("expected error for rule init failure, got nil")
+		t.Error("got nil, want error for rule init failure")
 	}
 }
 
@@ -197,7 +197,7 @@ func TestEngineNoRules(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 0 {
-		t.Errorf("expected 0 alerts with no rules, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 0 (no rules)", len(alerts))
 	}
 }
 
@@ -224,7 +224,7 @@ func TestEngineDedupSameEvent(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 1 {
-		t.Errorf("expected 1 alert after dedup, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 1 (after dedup)", len(alerts))
 	}
 }
 
@@ -252,7 +252,7 @@ func TestEngineDedupDifferentType(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 2 {
-		t.Errorf("expected 2 alerts (different types not deduplicated), got %d", len(alerts))
+		t.Errorf("got %d alerts, want 2 (different types not deduplicated)", len(alerts))
 	}
 }
 
@@ -277,7 +277,7 @@ func TestEngineDedupDifferentMAC(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 2 {
-		t.Errorf("expected 2 alerts (different MACs not deduplicated), got %d", len(alerts))
+		t.Errorf("got %d alerts, want 2 (different MACs not deduplicated)", len(alerts))
 	}
 }
 
@@ -309,7 +309,7 @@ func TestEngineDedupWindowExpiry(t *testing.T) {
 		t.Fatal("timeout waiting for first alert")
 	}
 	if first == nil {
-		t.Fatal("expected first alert, got nil")
+		t.Fatal("got nil, want first alert")
 	}
 
 	// Wait for dedup window to expire.
@@ -321,7 +321,7 @@ func TestEngineDedupWindowExpiry(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 1 {
-		t.Errorf("expected 1 alert after window expiry, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 1 (after window expiry)", len(alerts))
 	}
 }
 
@@ -370,7 +370,7 @@ func TestEngineShutdownByContext(t *testing.T) {
 	select {
 	case _, ok := <-engine.Alerts():
 		if ok {
-			t.Error("expected closed channel, got value")
+			t.Error("got value, want closed channel")
 		}
 	case <-time.After(time.Second):
 		t.Error("timeout waiting for channel close")
@@ -392,7 +392,7 @@ func TestEngineShutdownByFramesClose(t *testing.T) {
 	select {
 	case _, ok := <-engine.Alerts():
 		if ok {
-			t.Error("expected closed channel, got value")
+			t.Error("got value, want closed channel")
 		}
 	case <-time.After(time.Second):
 		t.Error("timeout waiting for channel close")
@@ -421,7 +421,7 @@ func TestEngineAlertsDrained(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 1 { // deduplicated to 1
-		t.Errorf("expected 1 deduplicated alert, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 1 (deduplicated)", len(alerts))
 	}
 
 	// Channel should be closed.
@@ -498,10 +498,10 @@ func TestEnginePanicRecovery(t *testing.T) {
 	// The safe rule should still produce its alert.
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 1 {
-		t.Errorf("expected 1 alert from safe rule, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 1 (from safe rule)", len(alerts))
 	}
 	if safeRule.Calls() != 1 {
-		t.Errorf("safe rule expected 1 call, got %d", safeRule.Calls())
+		t.Errorf("safe rule: got %d calls, want 1", safeRule.Calls())
 	}
 }
 
@@ -521,10 +521,10 @@ func TestEngineNilFrame(t *testing.T) {
 
 	alerts := drainAlerts(engine.Alerts())
 	if len(alerts) != 0 {
-		t.Errorf("expected 0 alerts for nil frame, got %d", len(alerts))
+		t.Errorf("got %d alerts, want 0 (nil frame)", len(alerts))
 	}
 	if rule.Calls() != 0 {
-		t.Errorf("expected 0 calls for nil frame, got %d", rule.Calls())
+		t.Errorf("got %d calls, want 0 (nil frame)", rule.Calls())
 	}
 }
 
@@ -563,12 +563,12 @@ func TestEngineConcurrentRunRace(t *testing.T) {
 	alerts := drainAlerts(engine.Alerts())
 	// All 100 frames should be processed by 4 rules = 400 events, but dedup reduces to 4 (one per rule).
 	if len(alerts) != 4 {
-		t.Errorf("expected 4 deduplicated alerts (1 per rule), got %d", len(alerts))
+		t.Errorf("got %d alerts, want 4 (deduplicated, 1 per rule)", len(alerts))
 	}
 
 	for _, r := range rules {
 		if r.Calls() != 100 {
-			t.Errorf("rule %s expected 100 calls, got %d", r.Name(), r.Calls())
+			t.Errorf("rule %s: got %d calls, want 100", r.Name(), r.Calls())
 		}
 	}
 }
@@ -622,7 +622,7 @@ func TestEngineZeroAlertBufferSize(t *testing.T) {
 		DedupWindow:     30 * time.Second,
 	})
 	if cap(engine.alerts) != config.DefaultAlertBufferSize {
-		t.Errorf("expected default buffer size %d, got %d", config.DefaultAlertBufferSize, cap(engine.alerts))
+		t.Errorf("got default buffer size %d, want %d", cap(engine.alerts), config.DefaultAlertBufferSize)
 	}
 }
 
@@ -633,7 +633,7 @@ func TestEngineZeroDedupWindow(t *testing.T) {
 		DedupWindow:     0,
 	})
 	if engine.dedupWindow != config.DefaultDedupWindow {
-		t.Errorf("expected default dedup window %v, got %v", config.DefaultDedupWindow, engine.dedupWindow)
+		t.Errorf("got default dedup window %v, want %v", engine.dedupWindow, config.DefaultDedupWindow)
 	}
 }
 
@@ -689,7 +689,7 @@ func TestSweepDedupOverflowEviction(t *testing.T) {
 
 	// After sweep, oldest half should be evicted.
 	if remaining > maxDedupEntries {
-		t.Errorf("expected at most %d entries after sweep, got %d", maxDedupEntries, remaining)
+		t.Errorf("got %d entries after sweep, want at most %d", remaining, maxDedupEntries)
 	}
 }
 
@@ -723,10 +723,10 @@ func TestEngineRegisterAfterRun(t *testing.T) {
 	rule := &countingRule{name: "late", eventType: "x", severity: SeverityInfo}
 	err := engine.Register(rule)
 	if err == nil {
-		t.Fatal("expected error when registering after Run, got nil")
+		t.Fatal("got nil, want error when registering after Run")
 	}
 	if !errors.Is(err, ErrEngineStarted) {
-		t.Errorf("expected ErrEngineStarted, got %v", err)
+		t.Errorf("got %v, want ErrEngineStarted", err)
 	}
 
 	close(frames)

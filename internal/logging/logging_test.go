@@ -47,30 +47,30 @@ func TestNewJSONFormat(t *testing.T) {
 
 func TestParseLevelDebug(t *testing.T) {
 	if l := parseLevel("debug"); l != slog.LevelDebug {
-		t.Errorf("expected LevelDebug, got %v", l)
+		t.Errorf("got %v, want LevelDebug", l)
 	}
 }
 
 func TestParseLevelInfo(t *testing.T) {
 	if l := parseLevel("info"); l != slog.LevelInfo {
-		t.Errorf("expected LevelInfo, got %v", l)
+		t.Errorf("got %v, want LevelInfo", l)
 	}
 }
 
 func TestParseLevelWarn(t *testing.T) {
 	if l := parseLevel("warn"); l != slog.LevelWarn {
-		t.Errorf("expected LevelWarn, got %v", l)
+		t.Errorf("got %v, want LevelWarn", l)
 	}
 }
 
 func TestParseLevelError(t *testing.T) {
 	if l := parseLevel("error"); l != slog.LevelError {
-		t.Errorf("expected LevelError, got %v", l)
+		t.Errorf("got %v, want LevelError", l)
 	}
 }
 
 func TestParseLevelUnknown(t *testing.T) {
 	if l := parseLevel("fatal"); l != slog.LevelInfo {
-		t.Errorf("expected fallback to LevelInfo, got %v", l)
+		t.Errorf("got %v, want fallback to LevelInfo", l)
 	}
 }

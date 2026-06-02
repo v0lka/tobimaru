@@ -25,7 +25,7 @@ func TestReportLimitations_AllSupported(t *testing.T) {
 
 	lims := caps.ReportLimitations()
 	if len(lims) != 0 {
-		t.Errorf("expected no limitations, got %d: %v", len(lims), lims)
+		t.Errorf("got %d limitations, want none: %v", len(lims), lims)
 	}
 }
 
@@ -41,7 +41,7 @@ func TestReportLimitations_AllLimited(t *testing.T) {
 
 	lims := caps.ReportLimitations()
 	if len(lims) == 0 {
-		t.Error("expected limitations, got none")
+		t.Error("got no limitations, want some")
 	}
 
 	// Check specific limitation messages exist.

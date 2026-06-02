@@ -11,13 +11,13 @@ func TestStringDefault(t *testing.T) {
 
 	s := String()
 	if !strings.Contains(s, "Tobimaru vdev") {
-		t.Errorf("expected version string to contain 'Tobimaru vdev', got: %s", s)
+		t.Errorf("got %s, want string containing 'Tobimaru vdev'", s)
 	}
 	if !strings.Contains(s, "commit: unknown") {
-		t.Errorf("expected commit 'unknown', got: %s", s)
+		t.Errorf("got %s, want string containing 'commit: unknown'", s)
 	}
 	if !strings.Contains(s, "built: unknown") {
-		t.Errorf("expected date 'unknown', got: %s", s)
+		t.Errorf("got %s, want string containing 'built: unknown'", s)
 	}
 }
 
@@ -27,7 +27,7 @@ func TestStringRelease(t *testing.T) {
 	s := String()
 	expected := "Tobimaru v1.0.0 (commit: abc1234, built: 2026-05-27T10:00:00Z)"
 	if s != expected {
-		t.Errorf("expected %q, got %q", expected, s)
+		t.Errorf("got %q, want %q", s, expected)
 	}
 
 	// Reset for other tests.

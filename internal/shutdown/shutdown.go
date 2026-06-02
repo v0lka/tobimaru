@@ -20,10 +20,12 @@ type Hook struct {
 // Manager coordinates graceful shutdown by waiting for OS signals
 // and executing registered cleanup hooks in reverse order.
 type Manager struct {
-	mu       sync.Mutex
-	hooks    []Hook
-	signals  []os.Signal
-	stopFunc context.CancelFunc // releases signal notification resources
+	mu           sync.Mutex
+	hooks        []Hook
+	signals      []os.Signal
+	stopFunc     context.CancelFunc // releases signal notification resources
+	shutdownOnce sync.Once
+	shutdownErr  error
 }
 
 // NewManager creates a new shutdown Manager that listens for SIGINT and SIGTERM.
@@ -63,8 +65,17 @@ func (m *Manager) WaitForSignal(ctx context.Context) context.Context {
 
 // Shutdown executes all registered cleanup hooks in reverse registration
 // order (LIFO). It respects the given context's deadline and aggregates
-// errors from all hooks.
+// errors from all hooks. Shutdown is safe to call multiple times; subsequent
+// calls return the result of the first invocation.
 func (m *Manager) Shutdown(ctx context.Context) error {
+	m.shutdownOnce.Do(func() {
+		m.shutdownErr = m.doShutdown(ctx)
+	})
+	return m.shutdownErr
+}
+
+// doShutdown contains the actual shutdown logic invoked exactly once.
+func (m *Manager) doShutdown(ctx context.Context) error {
 	m.mu.Lock()
 	if m.stopFunc != nil {
 		m.stopFunc()
@@ -88,6 +99,9 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 				errs = append(errs, err)
 			}
 		case <-ctx.Done():
+			// Hook is still running in the background. On the final shutdown
+			// path this is acceptable: the process is about to exit and the
+			// orphaned goroutine will be reclaimed by the OS.
 			errs = append(errs, ctx.Err())
 			return errors.Join(errs...)
 		}

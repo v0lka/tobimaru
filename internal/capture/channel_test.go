@@ -21,7 +21,7 @@ func TestNewChannelHopper(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if hopper.ChannelCount() != 3 {
-		t.Errorf("expected 3 channels, got %d", hopper.ChannelCount())
+		t.Errorf("got %d channels, want 3", hopper.ChannelCount())
 	}
 }
 
@@ -47,11 +47,11 @@ func TestChannelHopperWeightedDwell(t *testing.T) {
 		switch ch {
 		case 1, 2:
 			if dwell != 100*time.Millisecond {
-				t.Errorf("channel %d: expected dwell 100ms, got %v", ch, dwell)
+				t.Errorf("channel %d: got dwell %v, want 100ms", ch, dwell)
 			}
 		case 6, 11:
 			if dwell != 300*time.Millisecond {
-				t.Errorf("channel %d: expected dwell 300ms, got %v", ch, dwell)
+				t.Errorf("channel %d: got dwell %v, want 300ms", ch, dwell)
 			}
 		}
 	}
@@ -66,7 +66,7 @@ func TestChannelHopperDisabled(t *testing.T) {
 		t.Fatal("expected error for disabled hopper")
 	}
 	if !errors.Is(err, ErrHoppingDisabled) {
-		t.Errorf("expected ErrHoppingDisabled, got %v", err)
+		t.Errorf("got %v, want ErrHoppingDisabled", err)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestChannelHopperWrapAround(t *testing.T) {
 	ch3, _ := hopper.Next() // should wrap
 
 	if ch1 != 1 || ch2 != 6 || ch3 != 1 {
-		t.Errorf("expected [1, 6, 1], got [%d, %d, %d]", ch1, ch2, ch3)
+		t.Errorf("got [%d, %d, %d], want [1, 6, 1]", ch1, ch2, ch3)
 	}
 }
 
@@ -115,7 +115,7 @@ func TestChannelHopperWith5GHz(t *testing.T) {
 	}
 
 	if hopper.ChannelCount() != 4 {
-		t.Errorf("expected 4 channels, got %d", hopper.ChannelCount())
+		t.Errorf("got %d channels, want 4", hopper.ChannelCount())
 	}
 
 	// Verify all channels are present.
@@ -147,7 +147,7 @@ func TestChannelHopperReset(t *testing.T) {
 	hopper.Reset()
 	ch, _ := hopper.Next()
 	if ch != 1 {
-		t.Errorf("expected channel 1 after reset, got %d", ch)
+		t.Errorf("got channel %d after reset, want 1", ch)
 	}
 }
 
@@ -187,7 +187,7 @@ func TestChannelHopperRunBackoff(t *testing.T) {
 
 	// We should have entered backoff (delay > base dwell of 1ms).
 	if callCount < consecutiveFailuresThreshold {
-		t.Errorf("expected at least %d calls before backoff kicks in, got %d", consecutiveFailuresThreshold, callCount)
+		t.Errorf("got %d calls before backoff, want at least %d", callCount, consecutiveFailuresThreshold)
 	}
 	if maxDelay <= 1*time.Millisecond {
 		t.Errorf("expected backoff to grow delay above base dwell, max observed %v", maxDelay)
@@ -221,7 +221,7 @@ func TestChannelHopperRunBackoffResetsOnSuccess(t *testing.T) {
 	})
 
 	if calls < consecutiveFailuresThreshold+2 {
-		t.Errorf("expected at least %d calls (failures + recovery), got %d", consecutiveFailuresThreshold+2, calls)
+		t.Errorf("got %d calls (failures + recovery), want at least %d", calls, consecutiveFailuresThreshold+2)
 	}
 }
 
@@ -252,7 +252,7 @@ func TestNewChannelHopperPrimaryChannelsCopy(t *testing.T) {
 	for range hopper.ChannelCount() {
 		ch, dwell := hopper.Next()
 		if ch == 6 && dwell != 200*time.Millisecond {
-			t.Errorf("expected channel 6 dwell=200ms (multiplied), got %v — slice ownership leaked", dwell)
+			t.Errorf("channel 6: got dwell %v, want 200ms (multiplied) — slice ownership leaked", dwell)
 		}
 		if ch == 11 && dwell == 200*time.Millisecond {
 			t.Error("channel 11 unexpectedly got multiplied dwell — slice ownership leaked")

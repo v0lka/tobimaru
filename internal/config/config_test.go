@@ -21,19 +21,19 @@ monitor:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Log.Level != "debug" {
-		t.Errorf("expected log level debug, got %q", cfg.Log.Level)
+		t.Errorf("got log level %q, want debug", cfg.Log.Level)
 	}
 	if cfg.Log.Format != "json" {
-		t.Errorf("expected log format json, got %q", cfg.Log.Format)
+		t.Errorf("got log format %q, want json", cfg.Log.Format)
 	}
 	if cfg.Monitor.Interface != "wlan0" {
-		t.Errorf("expected monitor interface wlan0, got %q", cfg.Monitor.Interface)
+		t.Errorf("got monitor interface %q, want wlan0", cfg.Monitor.Interface)
 	}
 	if cfg.Monitor.Capture.Snaplen != DefaultSnaplen {
-		t.Errorf("expected snaplen %d, got %d", DefaultSnaplen, cfg.Monitor.Capture.Snaplen)
+		t.Errorf("got snaplen %d, want %d", cfg.Monitor.Capture.Snaplen, DefaultSnaplen)
 	}
 	if cfg.Monitor.ChannelHopping.Dwell != DefaultDwellTime {
-		t.Errorf("expected dwell %v, got %v", DefaultDwellTime, cfg.Monitor.ChannelHopping.Dwell)
+		t.Errorf("got dwell %v, want %v", cfg.Monitor.ChannelHopping.Dwell, DefaultDwellTime)
 	}
 }
 
@@ -47,10 +47,10 @@ monitor:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Log.Level != "info" {
-		t.Errorf("expected default log level info, got %q", cfg.Log.Level)
+		t.Errorf("got default log level %q, want info", cfg.Log.Level)
 	}
 	if cfg.Log.Format != "text" {
-		t.Errorf("expected default log format text, got %q", cfg.Log.Format)
+		t.Errorf("got default log format %q, want text", cfg.Log.Format)
 	}
 }
 
@@ -61,10 +61,10 @@ log:
 `
 	_, err := LoadReader(strings.NewReader(yaml))
 	if err == nil {
-		t.Fatal("expected error for missing interface, got nil")
+		t.Fatal("got nil, want error for missing interface")
 	}
 	if !IsValidationError(err) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+		t.Fatalf("got %T: %v, want ValidationError", err, err)
 	}
 }
 
@@ -77,10 +77,10 @@ monitor:
 `
 	_, err := LoadReader(strings.NewReader(yaml))
 	if err == nil {
-		t.Fatal("expected error for invalid log level, got nil")
+		t.Fatal("got nil, want error for invalid log level")
 	}
 	if !IsValidationError(err) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+		t.Fatalf("got %T: %v, want ValidationError", err, err)
 	}
 }
 
@@ -93,10 +93,10 @@ monitor:
 `
 	_, err := LoadReader(strings.NewReader(yaml))
 	if err == nil {
-		t.Fatal("expected error for invalid log format, got nil")
+		t.Fatal("got nil, want error for invalid log format")
 	}
 	if !IsValidationError(err) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+		t.Fatalf("got %T: %v, want ValidationError", err, err)
 	}
 }
 
@@ -110,7 +110,7 @@ monitor:
 `
 	_, err := LoadReader(strings.NewReader(yaml))
 	if err == nil {
-		t.Fatal("expected error for unknown field, got nil")
+		t.Fatal("got nil, want error for unknown field")
 	}
 }
 
@@ -122,14 +122,14 @@ log:
 `
 	_, err := LoadReader(strings.NewReader(yaml))
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal("got nil, want error")
 	}
 	var ve *ValidationError
 	if !errors.As(err, &ve) {
-		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
+		t.Fatalf("got %T: %v, want *ValidationError", err, err)
 	}
 	if len(ve.Errors) < 3 {
-		t.Errorf("expected at least 3 errors (missing interface, invalid level, invalid format), got %d", len(ve.Errors))
+		t.Errorf("got %d errors, want at least 3 (missing interface, invalid level, invalid format)", len(ve.Errors))
 	}
 }
 
@@ -148,10 +148,10 @@ monitor:
 		t.Error("expected channel hopping enabled")
 	}
 	if cfg.Monitor.ChannelHopping.Dwell != DefaultDwellTime {
-		t.Errorf("expected dwell %v, got %v", DefaultDwellTime, cfg.Monitor.ChannelHopping.Dwell)
+		t.Errorf("got dwell %v, want %v", cfg.Monitor.ChannelHopping.Dwell, DefaultDwellTime)
 	}
 	if len(cfg.Monitor.ChannelHopping.Channels2GHz) != 13 {
-		t.Errorf("expected 13 2.4 GHz channels, got %d", len(cfg.Monitor.ChannelHopping.Channels2GHz))
+		t.Errorf("got %d 2.4 GHz channels, want 13", len(cfg.Monitor.ChannelHopping.Channels2GHz))
 	}
 	if len(cfg.Monitor.ChannelHopping.Channels5GHz) == 0 {
 		t.Error("expected non-empty 5 GHz channels")
@@ -168,13 +168,13 @@ monitor:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Monitor.Capture.Snaplen != DefaultSnaplen {
-		t.Errorf("expected snaplen %d, got %d", DefaultSnaplen, cfg.Monitor.Capture.Snaplen)
+		t.Errorf("got snaplen %d, want %d", cfg.Monitor.Capture.Snaplen, DefaultSnaplen)
 	}
 	if cfg.Monitor.Capture.BufferSize != DefaultBufferSize {
-		t.Errorf("expected buffer_size %d, got %d", DefaultBufferSize, cfg.Monitor.Capture.BufferSize)
+		t.Errorf("got buffer_size %d, want %d", cfg.Monitor.Capture.BufferSize, DefaultBufferSize)
 	}
 	if cfg.Monitor.Capture.FrameBufferSize != DefaultFrameBufferSize {
-		t.Errorf("expected frame_buffer_size %d, got %d", DefaultFrameBufferSize, cfg.Monitor.Capture.FrameBufferSize)
+		t.Errorf("got frame_buffer_size %d, want %d", cfg.Monitor.Capture.FrameBufferSize, DefaultFrameBufferSize)
 	}
 }
 
@@ -192,7 +192,7 @@ monitor:
 	}
 	// Zero dwell should be replaced with default.
 	if cfg.Monitor.ChannelHopping.Dwell != DefaultDwellTime {
-		t.Errorf("expected default dwell %v, got %v", DefaultDwellTime, cfg.Monitor.ChannelHopping.Dwell)
+		t.Errorf("got default dwell %v, want %v", cfg.Monitor.ChannelHopping.Dwell, DefaultDwellTime)
 	}
 }
 
@@ -206,10 +206,10 @@ monitor:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Detection.DedupWindow != DefaultDedupWindow {
-		t.Errorf("expected dedup_window %v, got %v", DefaultDedupWindow, cfg.Detection.DedupWindow)
+		t.Errorf("got dedup_window %v, want %v", cfg.Detection.DedupWindow, DefaultDedupWindow)
 	}
 	if cfg.Detection.AlertBufferSize != DefaultAlertBufferSize {
-		t.Errorf("expected alert_buffer_size %d, got %d", DefaultAlertBufferSize, cfg.Detection.AlertBufferSize)
+		t.Errorf("got alert_buffer_size %d, want %d", cfg.Detection.AlertBufferSize, DefaultAlertBufferSize)
 	}
 	// Enabled defaults to false via zero value.
 	if cfg.Detection.Enabled {
@@ -234,10 +234,10 @@ detection:
 		t.Error("expected detection enabled")
 	}
 	if cfg.Detection.DedupWindow != 10*1000*1000*1000 { // 10s in nanoseconds
-		t.Errorf("expected dedup_window 10s, got %v", cfg.Detection.DedupWindow)
+		t.Errorf("got dedup_window %v, want 10s", cfg.Detection.DedupWindow)
 	}
 	if cfg.Detection.AlertBufferSize != 512 {
-		t.Errorf("expected alert_buffer_size 512, got %d", cfg.Detection.AlertBufferSize)
+		t.Errorf("got alert_buffer_size %d, want 512", cfg.Detection.AlertBufferSize)
 	}
 }
 
@@ -257,10 +257,10 @@ detection:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Detection.DedupWindow != DefaultDedupWindow {
-		t.Errorf("expected dedup_window %v, got %v", DefaultDedupWindow, cfg.Detection.DedupWindow)
+		t.Errorf("got dedup_window %v, want %v", cfg.Detection.DedupWindow, DefaultDedupWindow)
 	}
 	if cfg.Detection.AlertBufferSize != DefaultAlertBufferSize {
-		t.Errorf("expected alert_buffer_size %d, got %d", DefaultAlertBufferSize, cfg.Detection.AlertBufferSize)
+		t.Errorf("got alert_buffer_size %d, want %d", cfg.Detection.AlertBufferSize, DefaultAlertBufferSize)
 	}
 }
 
@@ -298,7 +298,7 @@ monitor:
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
 	if cfg.Monitor.Interface != "wlan0" {
-		t.Errorf("expected interface wlan0, got %q", cfg.Monitor.Interface)
+		t.Errorf("got interface %q, want wlan0", cfg.Monitor.Interface)
 	}
 }
 
@@ -328,9 +328,9 @@ func TestValidationErrorString(t *testing.T) {
 	}
 	s := ve.Error()
 	if !strings.Contains(s, "validation failed") {
-		t.Errorf("expected 'validation failed' in error string, got %q", s)
+		t.Errorf("got %q, want 'validation failed' in error string", s)
 	}
 	if !strings.Contains(s, "interface") {
-		t.Errorf("expected 'interface' in error string, got %q", s)
+		t.Errorf("got %q, want 'interface' in error string", s)
 	}
 }

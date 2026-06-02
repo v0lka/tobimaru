@@ -36,7 +36,7 @@ func TestChannelHopperRun(t *testing.T) {
 		t.Error("expected at least one channel hop")
 	}
 	if visited[0] != 1 {
-		t.Errorf("expected first channel 1, got %d", visited[0])
+		t.Errorf("got first channel %d, want 1", visited[0])
 	}
 }
 
@@ -107,7 +107,7 @@ func TestPipelineCapabilities(t *testing.T) {
 		t.Error("expected MonitorMode true")
 	}
 	if got.MaxChannels != 14 {
-		t.Errorf("expected MaxChannels 14, got %d", got.MaxChannels)
+		t.Errorf("got MaxChannels %d, want 14", got.MaxChannels)
 	}
 }
 
@@ -135,10 +135,13 @@ func TestPipelineStopSupported(t *testing.T) {
 		config:  &config.Config{Monitor: config.MonitorConfig{Interface: "en0"}},
 		monitor: mock,
 		frames:  make(chan *parser.ParsedFrame, 1),
+		logger:  slog.Default(),
 	}
 
 	// Stop should not panic.
-	p.Stop()
+	if err := p.Stop(t.Context()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestPipelineStopUnsupported(t *testing.T) {
@@ -147,10 +150,13 @@ func TestPipelineStopUnsupported(t *testing.T) {
 		config:  &config.Config{Monitor: config.MonitorConfig{Interface: "en0"}},
 		monitor: mock,
 		frames:  make(chan *parser.ParsedFrame, 1),
+		logger:  slog.Default(),
 	}
 
 	// Stop on unsupported platform should not panic.
-	p.Stop()
+	if err := p.Stop(t.Context()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestPipelineStopDisableError(t *testing.T) {
@@ -159,10 +165,13 @@ func TestPipelineStopDisableError(t *testing.T) {
 		config:  &config.Config{Monitor: config.MonitorConfig{Interface: "en0"}},
 		monitor: mock,
 		frames:  make(chan *parser.ParsedFrame, 1),
+		logger:  slog.Default(),
 	}
 
-	// Stop should log error but not panic.
-	p.Stop()
+	// Stop should return error but not panic.
+	if err := p.Stop(t.Context()); err == nil {
+		t.Fatal("got nil, want error from Stop")
+	}
 }
 
 func TestPipelineStartNotSupported(t *testing.T) {
@@ -171,6 +180,7 @@ func TestPipelineStartNotSupported(t *testing.T) {
 		config:  &config.Config{Monitor: config.MonitorConfig{Interface: "en0"}},
 		monitor: mock,
 		frames:  make(chan *parser.ParsedFrame, 1),
+		logger:  slog.Default(),
 	}
 
 	err := p.Start(context.Background())
@@ -178,7 +188,7 @@ func TestPipelineStartNotSupported(t *testing.T) {
 		t.Fatal("expected error for unsupported platform")
 	}
 	if !errors.Is(err, ErrNotSupported) {
-		t.Errorf("expected ErrNotSupported, got: %v", err)
+		t.Errorf("got %v, want ErrNotSupported", err)
 	}
 }
 
@@ -188,6 +198,7 @@ func TestPipelineStartEnableMonitorError(t *testing.T) {
 		config:  &config.Config{Monitor: config.MonitorConfig{Interface: "en0"}},
 		monitor: mock,
 		frames:  make(chan *parser.ParsedFrame, 1),
+		logger:  slog.Default(),
 	}
 
 	err := p.Start(context.Background())
@@ -218,6 +229,7 @@ func TestChannelHopperLoop(t *testing.T) {
 		monitor: mock,
 		hopper:  hopper,
 		frames:  make(chan *parser.ParsedFrame, 1),
+		logger:  slog.Default(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
