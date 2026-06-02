@@ -346,15 +346,13 @@ func TestEngineDedupSweep(t *testing.T) {
 
 	drainAlerts(engine.Alerts())
 
-	// After sweep, dedup map should be clean.
-	e := engine
-	e.mu.Lock()
-	entries := len(e.dedup)
-	e.mu.Unlock()
-
-	// After drain and sweep, the entry may still be there (not yet expired).
-	// We just verify the engine doesn't panic.
-	_ = entries
+	// Smoke test: sweep should not panic with a freshly populated map.
+	// Entry may or may not still be present depending on sweep timing
+	// (it's at most 100ms old; cutoff is 200ms). Either state is valid.
+	engine.mu.Lock()
+	entries := len(engine.dedup)
+	engine.mu.Unlock()
+	t.Logf("dedup map size after drain: %d", entries)
 }
 
 func TestEngineShutdownByContext(t *testing.T) {
@@ -709,5 +707,57 @@ func TestEmitNilEvent(t *testing.T) {
 		t.Error("no alert should be emitted for nil event")
 	default:
 		// expected
+	}
+}
+
+func TestEngineRegisterAfterRun(t *testing.T) {
+	engine := NewEngine(config.DetectionConfig{
+		Enabled:         true,
+		AlertBufferSize: 64,
+		DedupWindow:     30 * time.Second,
+	})
+
+	frames := make(chan *parser.ParsedFrame, 1)
+	engine.Run(t.Context(), frames)
+
+	rule := &countingRule{name: "late", eventType: "x", severity: SeverityInfo}
+	err := engine.Register(rule)
+	if err == nil {
+		t.Fatal("expected error when registering after Run, got nil")
+	}
+	if !errors.Is(err, ErrEngineStarted) {
+		t.Errorf("expected ErrEngineStarted, got %v", err)
+	}
+
+	close(frames)
+	drainAlerts(engine.Alerts())
+}
+
+func TestEngineRunIdempotent(t *testing.T) {
+	engine := NewEngine(config.DetectionConfig{
+		Enabled:         true,
+		AlertBufferSize: 64,
+		DedupWindow:     30 * time.Second,
+	})
+
+	frames := make(chan *parser.ParsedFrame, 1)
+	engine.Run(t.Context(), frames)
+	// Second call should be a safe no-op (does not panic, does not start
+	// another goroutine, does not double-close alerts).
+	engine.Run(t.Context(), frames)
+
+	close(frames)
+	drainAlerts(engine.Alerts())
+}
+
+func BenchmarkDedupKey(b *testing.B) {
+	ev := &SecurityEvent{
+		EventType: "deauth_flood",
+		SrcMAC:    net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+		BSSID:     net.HardwareAddr{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = dedupKey(ev)
 	}
 }

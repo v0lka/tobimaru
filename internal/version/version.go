@@ -1,29 +1,25 @@
 // Package version provides build version information injected via ldflags.
 package version
 
-import (
-	"fmt"
-	"sync"
-)
+import "fmt"
 
 // Build information, injected at build time via ldflags.
+// These variables are effectively immutable after process startup; production
+// builds set them via -X linker flags and never modify them again. SetVersion
+// exists for tests only and is NOT safe for concurrent use.
 var (
-	mu      sync.Mutex
 	Version = "dev"
 	Commit  = "unknown"
 	Date    = "unknown"
 )
 
-// SetVersion sets the build version info. Safe for concurrent use in tests.
+// SetVersion sets the build version info. Test-only — not safe for concurrent
+// use. Production code should rely on ldflags injection at link time.
 func SetVersion(v, c, d string) {
-	mu.Lock()
-	defer mu.Unlock()
 	Version, Commit, Date = v, c, d
 }
 
 // String returns a formatted version string.
 func String() string {
-	mu.Lock()
-	defer mu.Unlock()
 	return fmt.Sprintf("Tobimaru v%s (commit: %s, built: %s)", Version, Commit, Date)
 }

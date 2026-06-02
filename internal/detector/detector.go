@@ -4,9 +4,11 @@ package detector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +18,10 @@ import (
 )
 
 const maxDedupEntries = 10000
+
+// ErrEngineStarted is returned by Register when the engine has already been
+// started by Run; the rule list is immutable after Run is called.
+var ErrEngineStarted = errors.New("detector: engine already started; cannot register more rules")
 
 // Engine is the detection engine that aggregates detection rules, dispatches
 // parsed 802.11 frames to all registered rules, deduplicates security events,
@@ -27,7 +33,8 @@ type Engine struct {
 	dedupWindow time.Duration          // deduplication time window
 	dedup       map[string]time.Time   // dedup cache (key → last emission time)
 	mu          sync.Mutex             // guards dedup map
-	frameCount  atomic.Uint64          // total frames processed (for periodic sweep)
+	started     atomic.Bool            // set true on first Run; rejects late Register
+	frameCount  uint64                 // total frames processed; single-goroutine writer
 }
 
 // NewEngine creates a new detection engine from the detection configuration.
@@ -50,9 +57,13 @@ func NewEngine(cfg config.DetectionConfig) *Engine {
 
 // Register adds a detection rule to the engine. The rule's Init method is
 // called with the engine's configuration. Registration fails if a rule with
-// the same name is already registered or if Init returns an error.
+// the same name is already registered, if Init returns an error, or if the
+// engine has already been started by Run (ErrEngineStarted).
 // Must be called before Run.
 func (e *Engine) Register(rule Rule) error {
+	if e.started.Load() {
+		return ErrEngineStarted
+	}
 	for _, r := range e.rules {
 		if r.Name() == rule.Name() {
 			return fmt.Errorf("rule %q is already registered", rule.Name())
@@ -71,7 +82,16 @@ func (e *Engine) Register(rule Rule) error {
 // The goroutine exits when ctx is canceled or the frames channel is closed.
 // The alerts channel is closed when the goroutine exits.
 // Run returns immediately; the engine runs asynchronously.
+//
+// Run is idempotent: subsequent calls are no-ops once the engine is started.
+// After Run is called, the rule list is immutable; Register returns
+// ErrEngineStarted.
 func (e *Engine) Run(ctx context.Context, frames <-chan *parser.ParsedFrame) {
+	if !e.started.CompareAndSwap(false, true) {
+		slog.Warn("detector: Run called more than once; ignoring")
+		return
+	}
+
 	sweepInterval := max(e.dedupWindow, time.Second)
 	ticker := time.NewTicker(sweepInterval)
 
@@ -108,7 +128,8 @@ func (e *Engine) Alerts() <-chan *SecurityEvent {
 
 // dispatch processes a single frame through all registered rules.
 func (e *Engine) dispatch(frame *parser.ParsedFrame) {
-	count := e.frameCount.Add(1)
+	e.frameCount++
+	count := e.frameCount
 
 	if frame == nil {
 		slog.Warn("detector: received nil frame, skipping")
@@ -172,8 +193,24 @@ func (e *Engine) emit(event *SecurityEvent) {
 }
 
 // dedupKey constructs a deduplication key from the event's type and MAC addresses.
+// Hot-path: avoids fmt.Sprintf to reduce allocations on every emitted event.
 func dedupKey(event *SecurityEvent) string {
-	return fmt.Sprintf("%s:%s:%s", event.EventType, event.SrcMAC, event.BSSID)
+	src := ""
+	if event.SrcMAC != nil {
+		src = event.SrcMAC.String()
+	}
+	bss := ""
+	if event.BSSID != nil {
+		bss = event.BSSID.String()
+	}
+	var b strings.Builder
+	b.Grow(len(event.EventType) + len(src) + len(bss) + 2)
+	b.WriteString(event.EventType)
+	b.WriteByte(':')
+	b.WriteString(src)
+	b.WriteByte(':')
+	b.WriteString(bss)
+	return b.String()
 }
 
 // sweepDedup removes stale entries from the dedup map to prevent unbounded

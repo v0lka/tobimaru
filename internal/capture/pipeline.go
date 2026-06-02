@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/pcap"
 
 	"github.com/vkochetkov/tobimaru/internal/config"
@@ -162,7 +163,14 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	return nil
 }
 
+// disableMonitorTimeout caps how long Pipeline.Stop waits for the OS-level
+// "disable monitor mode" command (iw/airport) to return. Prevents the daemon
+// from hanging on a broken or unresponsive interface during shutdown.
+const disableMonitorTimeout = 5 * time.Second
+
 // Stop stops the capture pipeline and restores the interface to managed mode.
+// The OS-level "disable monitor mode" command runs with disableMonitorTimeout
+// to prevent shutdown from hanging on broken interfaces.
 func (p *Pipeline) Stop() {
 	iface := p.config.Monitor.Interface
 
@@ -174,7 +182,9 @@ func (p *Pipeline) Stop() {
 
 	if p.monitor.IsSupported() {
 		slog.Info("disabling monitor mode", "interface", iface)
-		if err := p.monitor.DisableMonitor(context.Background(), iface); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), disableMonitorTimeout)
+		defer cancel()
+		if err := p.monitor.DisableMonitor(ctx, iface); err != nil {
 			slog.Error("failed to disable monitor mode", "interface", iface, "error", err)
 		}
 	}
@@ -211,7 +221,7 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 			}
 		}
 
-		frame, err := parser.Parse(packet)
+		frame, err := safeParse(packet)
 		if err != nil {
 			slog.Debug("frame parse error", "error", err)
 			continue
@@ -227,6 +237,19 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 			return
 		}
 	}
+}
+
+// safeParse wraps parser.Parse with panic recovery. A panic during parsing
+// (e.g. from a malformed RadioTap header) must not terminate the capture
+// loop. The recovered panic is converted into a descriptive error.
+func safeParse(packet gopacket.Packet) (frame *parser.ParsedFrame, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("parser panic recovered: %v", r)
+			frame = nil
+		}
+	}()
+	return parser.Parse(packet)
 }
 
 // channelHopperLoop runs the channel hopper, switching channels on the
