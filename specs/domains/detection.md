@@ -70,12 +70,14 @@ type Engine struct { /* ... */ }
 
 func NewEngine(cfg config.DetectionConfig) *Engine
 func (e *Engine) Register(rule Rule) error
+func (e *Engine) RuleCount() int
 func (e *Engine) Run(ctx context.Context, frames <-chan *parser.ParsedFrame)
 func (e *Engine) Alerts() <-chan *SecurityEvent
 ```
 
 - `NewEngine(cfg)` — creates engine with buffered alerts channel and dedup map
 - `Register(rule)` — validates rule name uniqueness and calls `rule.Init(cfg)`; returns error on duplicate name or init failure
+- `RuleCount()` — returns the number of registered detection rules
 - `Run(ctx, frames)` — starts dispatch goroutine (reading frames, dispatching to rules, deduplicating, emitting alerts). Returns immediately. Goroutine exits on ctx cancellation or frames channel close.
 - `Alerts()` — returns read-only alerts channel; closes when dispatch goroutine exits
 

@@ -35,9 +35,9 @@ func (c *CaptureHandle) Close()
 **Monitor mode management:**
 ```go
 type MonitorModeManager interface {
-    EnableMonitor(iface string) error
-    DisableMonitor(iface string) error
-    SetChannel(iface string, channel int) error
+    EnableMonitor(ctx context.Context, iface string) error
+    DisableMonitor(ctx context.Context, iface string) error
+    SetChannel(ctx context.Context, iface string, channel int) error
     IsSupported() bool
 }
 
@@ -63,27 +63,27 @@ func (h *ChannelHopper) Run(ctx context.Context, setFn func(channel int) error)
 ```go
 type Pipeline struct { /* internal state */ }
 
-func NewPipeline(cfg *config.Config) (*Pipeline, error)
+func NewPipeline(cfg *config.Config, logger *slog.Logger) (*Pipeline, error)
 func (p *Pipeline) Start(ctx context.Context) error
 func (p *Pipeline) Stop()
 func (p *Pipeline) Frames() <-chan *parser.ParsedFrame
 func (p *Pipeline) Capabilities() platform.Capabilities
 ```
 
-`NewPipeline()` detects platform capabilities via `platform.Detect()`, logs them and any limitations, and enforces a minimum dwell time of 1 second on platforms with slow channel switching (macOS). If frame injection is unavailable, a warning is logged. `Capabilities()` returns the detected capabilities for use by consumers (e.g., future REST API).
+`NewPipeline()` detects platform capabilities via `platform.Detect()`, logs them and any limitations, and enforces a minimum dwell time of 1 second on platforms with slow channel switching (macOS). If frame injection is unavailable, an info message is logged. `Capabilities()` returns the detected capabilities for use by consumers (e.g., future REST API). The `logger` parameter allows callers to inject a configured logger for pipeline startup messages.
 
 ## Flow
 
 ### Startup
 
 ```
-NewPipeline(cfg)
+NewPipeline(cfg, logger)
   │
   ├─► Create MonitorModeManager for current platform
   │
   ├─► Detect platform capabilities via platform.Detect()
-  │     ├─ Log capabilities at INFO level
-  │     ├─ Log injection unavailability warning if !FrameInjection
+  │     ├─ Log capabilities at INFO level via injected logger
+  │     ├─ Log injection unavailability info if !FrameInjection
   │     └─ Log all platform limitations
   │
   ├─► If channel hopping enabled and SlowHopping:
@@ -92,7 +92,7 @@ NewPipeline(cfg)
   ├─► If channel hopping enabled:
   │     └─ Create ChannelHopper from ChannelHoppingConfig
   │
-  └─► Return Pipeline with frames channel (buffer cap: 1024)
+  └─► Return Pipeline with frames channel (buffer cap: cfg.Monitor.Capture.FrameBufferSize, default 1024)
 
 Pipeline.Start(ctx)
   │
@@ -142,7 +142,7 @@ captureLoop(ctx)
 - `Pipeline.Start()` enables monitor mode BEFORE opening the pcap handle — opening in RFMon mode requires the interface to be in monitor mode
 - Platform capabilities are detected and logged at `NewPipeline()` before any capture operations begin
 - On platforms with slow channel switching (`SlowHopping`), dwell time is enforced to a minimum of 1 second
-- The frames channel has a fixed buffer capacity of 1024 and is closed by the capture goroutine when it exits
+- The frames channel buffer capacity is configured via `CaptureConfig.FrameBufferSize` (default 1024) and is closed by the capture goroutine when it exits
 - The capture goroutine always closes the frames channel on exit (via `defer close(p.frames)`)
 - Channel hopping errors are logged as warnings — a failed channel switch does NOT stop the pipeline
 - Parse errors are logged at debug level — malformed frames are skipped but do NOT block the pipeline
@@ -156,7 +156,8 @@ captureLoop(ctx)
 |-----------|----------|------|---------|----------|
 | `monitor.capture.snaplen` | `CaptureConfig.Snaplen` | `int` | `65535` | No |
 | `monitor.capture.buffer_size` | `CaptureConfig.BufferSize` | `int` | `2097152` (2 MB) | No |
-| `monitor.capture.promiscuous` | `CaptureConfig.Promiscuous` | `bool` | `true` | No |
+| `monitor.capture.frame_buffer_size` | `CaptureConfig.FrameBufferSize` | `int` | `1024` | No |
+| `monitor.capture.promiscuous` | `CaptureConfig.Promiscuous` | `*bool` | `true` | No |
 | `monitor.capture.timeout` | `CaptureConfig.Timeout` | `time.Duration` | `100ms` | No |
 | `monitor.channel_hopping.enabled` | `ChannelHoppingConfig.Enabled` | `bool` | — | No |
 | `monitor.channel_hopping.dwell` | `ChannelHoppingConfig.Dwell` | `time.Duration` | `300ms` | No |

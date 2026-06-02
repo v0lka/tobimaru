@@ -16,7 +16,7 @@
 | `shutdown.Manager.Shutdown(ctx) error` | `internal/shutdown` | `cmd/tobimaru` | Execute cleanup hooks with timeout |
 | `version.String() string` | `internal/version` | `cmd/tobimaru` | Formatted version string for --version flag and startup log |
 | `version.Version`, `version.Commit`, `version.Date` (vars) | `internal/version` | `cmd/tobimaru` | Individual version fields for structured logging |
-| `capture.NewPipeline(cfg) (*Pipeline, error)` | `internal/capture` | `cmd/tobimaru` | Create capture pipeline from config |
+| `capture.NewPipeline(cfg, logger) (*Pipeline, error)` | `internal/capture` | `cmd/tobimaru` | Create capture pipeline from config |
 | `capture.Pipeline.Start(ctx) error` | `internal/capture` | `cmd/tobimaru` | Start frame capture, parsing, and channel hopping |
 | `capture.Pipeline.Stop()` | `internal/capture` | `cmd/tobimaru` | Disable monitor mode and restore interface |
 | `capture.Pipeline.Frames() <-chan *parser.ParsedFrame` | `internal/capture` | `cmd/tobimaru` | Read-only channel of parsed frames for consumers |
@@ -49,8 +49,8 @@ slog.SetDefault(logger)
 // 5. Log startup info (uses version vars from ldflags)
 slog.Info("starting", "version", version.Version, ...)
 
-// 6. Create capture pipeline from full config
-pipeline, err := capture.NewPipeline(cfg)
+// 6. Create capture pipeline from full config and logger
+pipeline, err := capture.NewPipeline(cfg, logger)
 // On failure: slog.Error + os.Exit(1) (logger is available)
 
 // 7. Create shutdown manager and get signal context
