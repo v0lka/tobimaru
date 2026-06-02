@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,6 +18,11 @@ import (
 )
 
 const maxDedupEntries = 10000
+
+// dedupSweepFrameInterval is how often dispatch triggers an opportunistic
+// dedup sweep, measured in frames processed. Faster than the time-based ticker
+// on busy pipelines.
+const dedupSweepFrameInterval = 1000
 
 // ErrEngineStarted is returned by Register when the engine has already been
 // started by Run; the rule list is immutable after Run is called.
@@ -83,9 +88,8 @@ func (e *Engine) Register(rule Rule) error {
 // The alerts channel is closed when the goroutine exits.
 // Run returns immediately; the engine runs asynchronously.
 //
-// Run is idempotent: subsequent calls are no-ops once the engine is started.
-// After Run is called, the rule list is immutable; Register returns
-// ErrEngineStarted.
+// Subsequent calls to Run are no-ops and emit a warning. After Run is called,
+// the rule list is immutable; Register returns ErrEngineStarted.
 func (e *Engine) Run(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 	if !e.started.CompareAndSwap(false, true) {
 		slog.Warn("detector: Run called more than once; ignoring")
@@ -128,20 +132,20 @@ func (e *Engine) Alerts() <-chan *SecurityEvent {
 
 // dispatch processes a single frame through all registered rules.
 func (e *Engine) dispatch(frame *parser.ParsedFrame) {
-	e.frameCount++
-	count := e.frameCount
-
 	if frame == nil {
 		slog.Warn("detector: received nil frame, skipping")
 		return
 	}
+
+	e.frameCount++
+	count := e.frameCount
 
 	for _, rule := range e.rules {
 		e.processRule(rule, frame)
 	}
 
 	// Periodic dedup sweep (faster than ticker for busy pipelines).
-	if count%1000 == 0 {
+	if count%dedupSweepFrameInterval == 0 {
 		e.sweepDedup()
 	}
 }
@@ -238,8 +242,8 @@ func (e *Engine) sweepDedup() {
 			entries = append(entries, keyTime{k, v})
 		}
 		// Sort by oldest first and remove the oldest half.
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].lastSeen.Before(entries[j].lastSeen)
+		slices.SortFunc(entries, func(a, b keyTime) int {
+			return a.lastSeen.Compare(b.lastSeen)
 		})
 		for i := range len(entries) / 2 {
 			delete(e.dedup, entries[i].key)

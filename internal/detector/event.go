@@ -90,6 +90,10 @@ func NewEvent(timestamp time.Time, eventType string, severity Severity) *Securit
 
 // String returns a human-readable summary of the event.
 func (e *SecurityEvent) String() string {
+	src := "<unknown>"
+	if e.SrcMAC != nil {
+		src = e.SrcMAC.String()
+	}
 	return fmt.Sprintf("[%s] %s: %s (src=%s, channel=%d)",
-		e.Severity.String(), e.EventType, e.Description, e.SrcMAC, e.Channel)
+		e.Severity.String(), e.EventType, e.Description, src, e.Channel)
 }

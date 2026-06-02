@@ -12,6 +12,14 @@ import (
 	"github.com/gopacket/gopacket/layers"
 )
 
+// Sentinel errors returned by Parse.
+var (
+	// ErrNoDot11Layer indicates the packet does not contain a Dot11 layer.
+	ErrNoDot11Layer = errors.New("no Dot11 layer found in packet")
+	// ErrInvalidDot11Layer indicates the Dot11 layer could not be cast.
+	ErrInvalidDot11Layer = errors.New("failed to cast Dot11 layer")
+)
+
 // FrameType represents the high-level classification of an 802.11 frame.
 type FrameType int
 
@@ -156,11 +164,11 @@ func Parse(packet gopacket.Packet) (*ParsedFrame, error) {
 	// Extract Dot11 layer.
 	dot11Layer := packet.Layer(layers.LayerTypeDot11)
 	if dot11Layer == nil {
-		return nil, errors.New("no Dot11 layer found in packet")
+		return nil, ErrNoDot11Layer
 	}
 	dot11, ok := dot11Layer.(*layers.Dot11)
 	if !ok {
-		return nil, errors.New("failed to cast Dot11 layer")
+		return nil, ErrInvalidDot11Layer
 	}
 	parseDot11(f, dot11)
 
@@ -400,27 +408,38 @@ func extractSSIDFromPayload(packet gopacket.Packet) (string, bool) {
 	return "", false
 }
 
+// iterateIEs walks an 802.11 information element TLV stream, calling yield
+// for each (id, info) pair. Iteration stops if yield returns false, on a
+// truncated record, or after maxIEsPerFrame iterations. The slice passed to
+// yield aliases the input data — copy if retention is needed.
+func iterateIEs(data []byte, yield func(id uint8, info []byte) bool) {
+	for i := 0; len(data) >= 2 && i < maxIEsPerFrame; i++ {
+		id, length := data[0], int(data[1])
+		if len(data) < 2+length {
+			return
+		}
+		if !yield(id, data[2:2+length]) {
+			return
+		}
+		data = data[2+length:]
+	}
+}
+
 // parseIEForSSID parses raw IE bytes looking for the SSID element (ID 0).
 // Returns (ssid, present) — present is true even for zero-length SSIDs.
 // Caps iteration at maxIEsPerFrame to defend against malformed inputs.
 func parseIEForSSID(data []byte) (string, bool) {
-	iterations := 0
-	for len(data) >= 2 {
-		if iterations >= maxIEsPerFrame {
-			break
-		}
-		iterations++
-		id := data[0]
-		length := int(data[1])
-		if len(data) < 2+length {
-			break
-		}
+	var ssid string
+	var found bool
+	iterateIEs(data, func(id uint8, info []byte) bool {
 		if id == 0 {
-			return string(data[2 : 2+length]), true
+			ssid = string(info)
+			found = true
+			return false // stop iteration
 		}
-		data = data[2+length:]
-	}
-	return "", false
+		return true
+	})
+	return ssid, found
 }
 
 // extractInfoElements extracts all information elements from the packet,
@@ -459,18 +478,13 @@ func extractIEsFromPayload(f *ParsedFrame, packet gopacket.Packet) {
 // Caps the number of stored elements at maxIEsPerFrame to defend against
 // malformed or malicious frames.
 func parseIEsRaw(data []byte, f *ParsedFrame) {
-	for len(data) >= 2 {
+	iterateIEs(data, func(id uint8, info []byte) bool {
 		if len(f.InfoElements) >= maxIEsPerFrame {
-			break
+			return false
 		}
-		id := data[0]
-		length := int(data[1])
-		if len(data) < 2+length {
-			break
-		}
-		f.InfoElements[id] = append([]byte(nil), data[2:2+length]...)
-		data = data[2+length:]
-	}
+		f.InfoElements[id] = append([]byte(nil), info...)
+		return true
+	})
 }
 
 // freqToChannel converts a WiFi frequency (in MHz) to a channel number.

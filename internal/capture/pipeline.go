@@ -120,7 +120,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 		return fmt.Errorf("%w", ErrNotSupported)
 	}
 
-	slog.Info("enabling monitor mode", "interface", iface)
+	p.logger.Info("enabling monitor mode", "interface", iface)
 	if err := p.monitor.EnableMonitor(ctx, iface); err != nil {
 		return fmt.Errorf("failed to enable monitor mode on %s: %w", iface, err)
 	}
@@ -132,7 +132,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	}
 	p.handle = handle
 
-	slog.Info("capture started",
+	p.logger.Info("capture started",
 		"interface", iface,
 		"snaplen", ccfg.Snaplen,
 		"buffer_size", ccfg.BufferSize,
@@ -170,8 +170,9 @@ const disableMonitorTimeout = 5 * time.Second
 
 // Stop stops the capture pipeline and restores the interface to managed mode.
 // The OS-level "disable monitor mode" command runs with disableMonitorTimeout
-// to prevent shutdown from hanging on broken interfaces.
-func (p *Pipeline) Stop() {
+// to prevent shutdown from hanging on broken interfaces. The caller's ctx
+// deadline is respected as an upper bound on the operation.
+func (p *Pipeline) Stop(ctx context.Context) error {
 	iface := p.config.Monitor.Interface
 
 	// Wait for the channel hopper to finish before disabling monitor mode,
@@ -180,14 +181,18 @@ func (p *Pipeline) Stop() {
 		<-p.hopperDone
 	}
 
-	if p.monitor.IsSupported() {
-		slog.Info("disabling monitor mode", "interface", iface)
-		ctx, cancel := context.WithTimeout(context.Background(), disableMonitorTimeout)
-		defer cancel()
-		if err := p.monitor.DisableMonitor(ctx, iface); err != nil {
-			slog.Error("failed to disable monitor mode", "interface", iface, "error", err)
-		}
+	if !p.monitor.IsSupported() {
+		return nil
 	}
+
+	p.logger.Info("disabling monitor mode", "interface", iface)
+	disableCtx, cancel := context.WithTimeout(ctx, disableMonitorTimeout)
+	defer cancel()
+	if err := p.monitor.DisableMonitor(disableCtx, iface); err != nil {
+		p.logger.Error("failed to disable monitor mode", "interface", iface, "error", err)
+		return fmt.Errorf("failed to disable monitor mode on %s: %w", iface, err)
+	}
+	return nil
 }
 
 // captureLoop reads packets from the pcap handle, parses them, and sends
@@ -216,14 +221,14 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 			case <-ctx.Done():
 				return
 			default:
-				slog.Debug("capture read error", "error", err)
+				p.logger.Warn("unexpected capture read error", "error", err)
 				return
 			}
 		}
 
 		frame, err := safeParse(packet)
 		if err != nil {
-			slog.Debug("frame parse error", "error", err)
+			p.logger.Debug("frame parse error", "error", err)
 			continue
 		}
 
@@ -255,12 +260,12 @@ func safeParse(packet gopacket.Packet) (frame *parser.ParsedFrame, err error) {
 // channelHopperLoop runs the channel hopper, switching channels on the
 // monitor interface at the configured intervals.
 func (p *Pipeline) channelHopperLoop(ctx context.Context) {
-	slog.Info("channel hopper started",
+	p.logger.Info("channel hopper started",
 		"channel_count", p.hopper.ChannelCount(),
 	)
 
 	p.hopper.Run(ctx, func(channel int) error {
-		slog.Debug("hopping to channel", "channel", channel)
+		p.logger.Debug("hopping to channel", "channel", channel)
 		return p.monitor.SetChannel(ctx, p.config.Monitor.Interface, channel)
 	})
 }
