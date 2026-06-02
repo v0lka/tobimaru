@@ -33,6 +33,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Monitor.Capture.BufferSize == 0 {
 		cfg.Monitor.Capture.BufferSize = DefaultBufferSize
 	}
+	if cfg.Monitor.Capture.FrameBufferSize == 0 {
+		cfg.Monitor.Capture.FrameBufferSize = DefaultFrameBufferSize
+	}
 	if cfg.Monitor.Capture.Timeout == 0 {
 		cfg.Monitor.Capture.Timeout = DefaultTimeout
 	}

@@ -43,8 +43,8 @@ func main() {
 		"date", version.Date,
 	)
 
-	// Create capture pipeline.
-	pipeline, err := capture.NewPipeline(cfg)
+	// Create capture pipeline with the configured logger.
+	pipeline, err := capture.NewPipeline(cfg, logger)
 	if err != nil {
 		slog.Error("Failed to create capture pipeline", "error", err)
 		os.Exit(1)
@@ -74,6 +74,10 @@ func main() {
 
 	// Register rules (individual attack rules come in tasks 2.3-2.7).
 	// engine.Register(myRule)
+
+	if cfg.Detection.Enabled && engine.RuleCount() == 0 {
+		slog.Warn("detection enabled but no rules registered; alerts will not be generated")
+	}
 
 	if cfg.Detection.Enabled {
 		engine.Run(signalCtx, pipeline.Frames())

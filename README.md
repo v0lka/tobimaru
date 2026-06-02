@@ -15,7 +15,7 @@ Tobimaru is a WiFi Intrusion Detection System (WIDS) for Linux and macOS. It ope
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.26+
 - Linux or macOS
 - Root/sudo access (required for monitor mode and BPF device access)
 - `iw` and `ip` utilities (Linux)

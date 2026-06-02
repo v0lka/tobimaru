@@ -3,9 +3,12 @@
 package capture
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
+
+	"github.com/vkochetkov/tobimaru/internal/platform"
 )
 
 const (
@@ -26,18 +29,16 @@ type darwinMonitor struct {
 // NewMonitorModeManager creates a MonitorModeManager backed by the airport utility.
 // It validates that the airport utility is available on the system.
 func NewMonitorModeManager() (MonitorModeManager, error) {
-	// First try the common symlink location.
+	if !platform.AirportAvailable() {
+		return nil, fmt.Errorf("airport utility not found at %s or %s: install it with: sudo ln -s \"%s\" /usr/local/bin/airport",
+			airportSymlink, airportFrameworkPath, airportFrameworkPath)
+	}
+	// Resolve the airport path for command execution.
 	path, err := exec.LookPath("airport")
-	if err == nil {
-		return &darwinMonitor{airportPath: path}, nil
+	if err != nil {
+		path = airportFrameworkPath
 	}
-	// Fall back to the absolute framework path.
-	path, err = exec.LookPath(airportFrameworkPath)
-	if err == nil {
-		return &darwinMonitor{airportPath: path}, nil
-	}
-	return nil, fmt.Errorf("airport utility not found at %s or %s: install it with: sudo ln -s \"%s\" /usr/local/bin/airport",
-		airportSymlink, airportFrameworkPath, airportFrameworkPath)
+	return &darwinMonitor{airportPath: path}, nil
 }
 
 func (m *darwinMonitor) IsSupported() bool {
@@ -47,31 +48,31 @@ func (m *darwinMonitor) IsSupported() bool {
 // EnableMonitor disconnects from any WiFi network on the given interface.
 // This is required before activating RFMon mode on the BPF device.
 // On macOS, the actual monitor mode is activated by SetRFMon(true) in OpenCapture().
-func (m *darwinMonitor) EnableMonitor(iface string) error {
-	return m.runAirport(iface, "-z")
+func (m *darwinMonitor) EnableMonitor(ctx context.Context, iface string) error {
+	return m.runAirport(ctx, iface, "-z")
 }
 
 // DisableMonitor resets the airport state. The macOS wireless stack typically
 // reconnects automatically after a brief delay.
-func (m *darwinMonitor) DisableMonitor(iface string) error {
-	return m.runAirport(iface, "-z")
+func (m *darwinMonitor) DisableMonitor(ctx context.Context, iface string) error {
+	return m.runAirport(ctx, iface, "-z")
 }
 
 // SetChannel sets the interface to the specified WiFi channel.
 // Note: this operation can take 1-3 seconds on macOS, which makes channel
 // hopping significantly slower than on Linux.
-func (m *darwinMonitor) SetChannel(iface string, channel int) error {
-	return m.runAirport(iface, "--channel="+strconv.Itoa(channel))
+func (m *darwinMonitor) SetChannel(ctx context.Context, iface string, channel int) error {
+	return m.runAirport(ctx, iface, "--channel="+strconv.Itoa(channel))
 }
 
 // runAirport executes the airport utility with interface and arguments.
-func (m *darwinMonitor) runAirport(iface string, args ...string) error {
-	return runDarwinCmd(m.airportPath, append([]string{iface}, args...)...)
+func (m *darwinMonitor) runAirport(ctx context.Context, iface string, args ...string) error {
+	return runDarwinCmd(ctx, m.airportPath, append([]string{iface}, args...)...)
 }
 
 // runDarwinCmd executes a command and returns an error if it fails, including stderr.
-func runDarwinCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+func runDarwinCmd(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s %v: %w (output: %s)", name, args, err, string(output))

@@ -2,9 +2,12 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/gopacket/gopacket/pcap"
 
 	"github.com/vkochetkov/tobimaru/internal/config"
 	"github.com/vkochetkov/tobimaru/internal/parser"
@@ -15,25 +18,27 @@ import (
 // It manages the pcap capture goroutine, channel hopping, and delivers parsed frames
 // through a buffered Go channel.
 type Pipeline struct {
-	config  *config.Config
-	monitor MonitorModeManager
-	handle  *CaptureHandle
-	hopper  *ChannelHopper
-	frames  chan *parser.ParsedFrame
-	caps    platform.Capabilities
+	config     *config.Config
+	monitor    MonitorModeManager
+	handle     *CaptureHandle
+	hopper     *ChannelHopper
+	hopperDone chan struct{}
+	frames     chan *parser.ParsedFrame
+	caps       platform.Capabilities
+	logger     *slog.Logger
 }
 
 // NewPipeline creates a new capture pipeline from the application configuration.
 // It initializes the monitor mode manager for the current platform, detects
 // platform capabilities, and sets up the channel hopper if enabled.
-func NewPipeline(cfg *config.Config) (*Pipeline, error) {
+func NewPipeline(cfg *config.Config, logger *slog.Logger) (*Pipeline, error) {
 	monitor, err := NewMonitorModeManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create monitor mode manager: %w", err)
 	}
 
 	caps := platform.Detect()
-	logCapabilities(caps)
+	logCapabilities(logger, caps)
 
 	var hopper *ChannelHopper
 	if cfg.Monitor.ChannelHopping.Enabled {
@@ -44,7 +49,7 @@ func NewPipeline(cfg *config.Config) (*Pipeline, error) {
 		if caps.SlowHopping {
 			const minDwell = 1 * time.Second
 			if hopCfg.Dwell < minDwell {
-				slog.Warn("increasing dwell time for slow channel hopping platform",
+				logger.Warn("increasing dwell time for slow channel hopping platform",
 					"original_dwell", hopCfg.Dwell,
 					"enforced_dwell", minDwell,
 				)
@@ -54,7 +59,11 @@ func NewPipeline(cfg *config.Config) (*Pipeline, error) {
 
 		hopper, err = NewChannelHopper(&hopCfg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create channel hopper: %w", err)
+			if errors.Is(err, ErrHoppingDisabled) {
+				logger.Info("channel hopping disabled; continuing without it")
+			} else {
+				return nil, fmt.Errorf("failed to create channel hopper: %w", err)
+			}
 		}
 	}
 
@@ -62,8 +71,9 @@ func NewPipeline(cfg *config.Config) (*Pipeline, error) {
 		config:  cfg,
 		monitor: monitor,
 		hopper:  hopper,
-		frames:  make(chan *parser.ParsedFrame, 1024),
+		frames:  make(chan *parser.ParsedFrame, cfg.Monitor.Capture.FrameBufferSize),
 		caps:    caps,
+		logger:  logger,
 	}, nil
 }
 
@@ -73,8 +83,8 @@ func (p *Pipeline) Capabilities() platform.Capabilities {
 }
 
 // logCapabilities logs detected platform capabilities and any limitations.
-func logCapabilities(caps platform.Capabilities) {
-	slog.Info("platform capabilities",
+func logCapabilities(logger *slog.Logger, caps platform.Capabilities) {
+	logger.Info("platform capabilities",
 		"monitor_mode", caps.MonitorMode,
 		"frame_injection", caps.FrameInjection,
 		"channel_hopping", caps.ChannelHopping,
@@ -84,11 +94,11 @@ func logCapabilities(caps platform.Capabilities) {
 	)
 
 	if !caps.FrameInjection {
-		slog.Info("active countermeasures (frame injection) are not available on this platform")
+		logger.Info("active countermeasures (frame injection) are not available on this platform")
 	}
 
 	for _, lim := range caps.ReportLimitations() {
-		slog.Warn("platform limitation", "detail", lim)
+		logger.Warn("platform limitation", "detail", lim)
 	}
 }
 
@@ -110,7 +120,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	}
 
 	slog.Info("enabling monitor mode", "interface", iface)
-	if err := p.monitor.EnableMonitor(iface); err != nil {
+	if err := p.monitor.EnableMonitor(ctx, iface); err != nil {
 		return fmt.Errorf("failed to enable monitor mode on %s: %w", iface, err)
 	}
 
@@ -125,6 +135,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 		"interface", iface,
 		"snaplen", ccfg.Snaplen,
 		"buffer_size", ccfg.BufferSize,
+		"frame_buffer_size", ccfg.FrameBufferSize,
 		"channel_hopping", p.config.Monitor.ChannelHopping.Enabled,
 	)
 
@@ -132,9 +143,13 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	captureCtx, cancel := context.WithCancel(ctx)
 	go p.captureLoop(captureCtx, cancel)
 
-	// Start channel hopper goroutine.
+	// Start channel hopper goroutine with done signal for clean shutdown ordering.
 	if p.hopper != nil {
-		go p.channelHopperLoop(captureCtx)
+		p.hopperDone = make(chan struct{})
+		go func() {
+			p.channelHopperLoop(captureCtx)
+			close(p.hopperDone)
+		}()
 	}
 
 	// Watch for context cancellation to close the pcap handle,
@@ -151,9 +166,15 @@ func (p *Pipeline) Start(ctx context.Context) error {
 func (p *Pipeline) Stop() {
 	iface := p.config.Monitor.Interface
 
+	// Wait for the channel hopper to finish before disabling monitor mode,
+	// ensuring no SetChannel calls are in flight.
+	if p.hopperDone != nil {
+		<-p.hopperDone
+	}
+
 	if p.monitor.IsSupported() {
 		slog.Info("disabling monitor mode", "interface", iface)
-		if err := p.monitor.DisableMonitor(iface); err != nil {
+		if err := p.monitor.DisableMonitor(context.Background(), iface); err != nil {
 			slog.Error("failed to disable monitor mode", "interface", iface, "error", err)
 		}
 	}
@@ -176,6 +197,10 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 
 		packet, err := source.NextPacket()
 		if err != nil {
+			// Timeout is expected during normal operation (pcap polling).
+			if errors.Is(err, pcap.NextErrorTimeoutExpired) {
+				continue
+			}
 			// Handle closed or encountered an error.
 			select {
 			case <-ctx.Done():
@@ -213,6 +238,6 @@ func (p *Pipeline) channelHopperLoop(ctx context.Context) {
 
 	p.hopper.Run(ctx, func(channel int) error {
 		slog.Debug("hopping to channel", "channel", channel)
-		return p.monitor.SetChannel(p.config.Monitor.Interface, channel)
+		return p.monitor.SetChannel(ctx, p.config.Monitor.Interface, channel)
 	})
 }

@@ -14,7 +14,7 @@ const airportFrameworkPath = "/System/Library/PrivateFrameworks/Apple80211.frame
 // Detect returns the capabilities for the macOS (darwin) platform.
 // It checks for the airport utility to determine if monitor mode is available.
 func Detect() Capabilities {
-	monitorAvailable := detectAirport()
+	monitorAvailable := AirportAvailable()
 
 	return Capabilities{
 		MonitorMode:    monitorAvailable,
@@ -26,9 +26,9 @@ func Detect() Capabilities {
 	}
 }
 
-// detectAirport checks whether the airport utility is available.
+// AirportAvailable checks whether the airport utility is available.
 // It tries the symlink location first, then the framework path.
-func detectAirport() bool {
+func AirportAvailable() bool {
 	_, err := exec.LookPath("airport")
 	if err == nil {
 		return true

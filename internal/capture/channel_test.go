@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -62,6 +63,9 @@ func TestChannelHopperDisabled(t *testing.T) {
 	_, err := NewChannelHopper(&cfg)
 	if err == nil {
 		t.Fatal("expected error for disabled hopper")
+	}
+	if !errors.Is(err, ErrHoppingDisabled) {
+		t.Errorf("expected ErrHoppingDisabled, got %v", err)
 	}
 }
 

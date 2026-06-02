@@ -3,6 +3,7 @@ package capture
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -73,10 +74,10 @@ type mockMonitor struct {
 	setChanErr error
 }
 
-func (m *mockMonitor) IsSupported() bool                { return m.supported }
-func (m *mockMonitor) EnableMonitor(_ string) error     { return m.enableErr }
-func (m *mockMonitor) DisableMonitor(_ string) error    { return m.disableErr }
-func (m *mockMonitor) SetChannel(_ string, _ int) error { return m.setChanErr }
+func (m *mockMonitor) IsSupported() bool                                   { return m.supported }
+func (m *mockMonitor) EnableMonitor(_ context.Context, _ string) error     { return m.enableErr }
+func (m *mockMonitor) DisableMonitor(_ context.Context, _ string) error    { return m.disableErr }
+func (m *mockMonitor) SetChannel(_ context.Context, _ string, _ int) error { return m.setChanErr }
 
 func TestPipelineFrames(t *testing.T) {
 	frames := make(chan *parser.ParsedFrame, 10)
@@ -111,6 +112,7 @@ func TestPipelineCapabilities(t *testing.T) {
 }
 
 func TestLogCapabilities(t *testing.T) {
+	logger := slog.Default()
 	// logCapabilities should not panic with any combination of capabilities.
 	caps := platform.Capabilities{
 		MonitorMode:    true,
@@ -120,11 +122,11 @@ func TestLogCapabilities(t *testing.T) {
 		SlowHopping:    true,
 		SingleAdapter:  true,
 	}
-	logCapabilities(caps)
+	logCapabilities(logger, caps)
 
 	// Also test with frame injection available.
 	caps.FrameInjection = true
-	logCapabilities(caps)
+	logCapabilities(logger, caps)
 }
 
 func TestPipelineStopSupported(t *testing.T) {
@@ -229,9 +231,10 @@ func TestNewPipelineCreation(t *testing.T) {
 		Monitor: config.MonitorConfig{
 			Interface: "en0",
 			Capture: config.CaptureConfig{
-				Snaplen:    65535,
-				BufferSize: 2097152,
-				Timeout:    100 * time.Millisecond,
+				Snaplen:         65535,
+				BufferSize:      2097152,
+				Timeout:         100 * time.Millisecond,
+				FrameBufferSize: 1024,
 			},
 			ChannelHopping: config.ChannelHoppingConfig{
 				Enabled:      true,
@@ -241,7 +244,7 @@ func TestNewPipelineCreation(t *testing.T) {
 		},
 	}
 
-	p, err := NewPipeline(cfg)
+	p, err := NewPipeline(cfg, slog.Default())
 	if err != nil {
 		t.Skipf("NewPipeline not available on this system: %v", err)
 	}

@@ -54,6 +54,7 @@ const (
 	DefaultMultiplier      = 2.5
 	DefaultDedupWindow     = 30 * time.Second
 	DefaultAlertBufferSize = 256
+	DefaultFrameBufferSize = 1024
 )
 
 // LogConfig holds logging-related configuration.
@@ -71,10 +72,11 @@ type MonitorConfig struct {
 
 // CaptureConfig holds pcap capture settings.
 type CaptureConfig struct {
-	Snaplen     int           `yaml:"snaplen"`     // max bytes per packet
-	BufferSize  int           `yaml:"buffer_size"` // pcap buffer size in bytes
-	Promiscuous *bool         `yaml:"promiscuous"` // promiscuous mode; defaults to true
-	Timeout     time.Duration `yaml:"timeout"`     // pcap read timeout
+	Snaplen         int           `yaml:"snaplen"`           // max bytes per packet
+	BufferSize      int           `yaml:"buffer_size"`       // pcap buffer size in bytes
+	FrameBufferSize int           `yaml:"frame_buffer_size"` // parsed frame channel buffer size
+	Promiscuous     *bool         `yaml:"promiscuous"`       // promiscuous mode; defaults to true
+	Timeout         time.Duration `yaml:"timeout"`           // pcap read timeout
 }
 
 // ChannelHoppingConfig holds channel hopping settings.

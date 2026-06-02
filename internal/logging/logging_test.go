@@ -1,39 +1,47 @@
 package logging
 
 import (
-	"bytes"
+	"context"
 	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/vkochetkov/tobimaru/internal/config"
 )
 
 func TestNewTextFormat(t *testing.T) {
-	cfg := config.LogConfig{Level: "info", Format: "text"}
-	_ = New(cfg)
+	cfg := config.LogConfig{Level: "debug", Format: "text"}
+	logger := New(cfg)
+	if logger == nil {
+		t.Fatal("New() returned nil")
+	}
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	logger.Info("test message")
-
-	output := buf.String()
-	if !strings.Contains(output, "test message") {
-		t.Errorf("expected text output to contain message, got: %s", output)
+	// Verify the handler is a text handler with the correct level.
+	handler := logger.Handler()
+	if handler == nil {
+		t.Fatal("Handler() returned nil")
+	}
+	if !handler.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("text handler should be enabled for debug level")
+	}
+	if handler.Enabled(context.Background(), slog.LevelDebug-1) {
+		t.Error("text handler should not be enabled below debug level")
 	}
 }
 
 func TestNewJSONFormat(t *testing.T) {
-	cfg := config.LogConfig{Level: "info", Format: "json"}
-	_ = New(cfg)
+	cfg := config.LogConfig{Level: "debug", Format: "json"}
+	logger := New(cfg)
+	if logger == nil {
+		t.Fatal("New() returned nil")
+	}
 
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	logger.Info("test json")
-
-	output := buf.String()
-	if !strings.Contains(output, "test json") {
-		t.Errorf("expected JSON output, got: %s", output)
+	// Verify the handler is a JSON handler with the correct level.
+	handler := logger.Handler()
+	if handler == nil {
+		t.Fatal("Handler() returned nil")
+	}
+	if !handler.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("json handler should be enabled for debug level")
 	}
 }
 
