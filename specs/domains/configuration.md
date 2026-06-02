@@ -33,10 +33,11 @@ type MonitorConfig struct {
 }
 
 type CaptureConfig struct {
-    Snaplen     int           `yaml:"snaplen"`     // max bytes per packet
-    BufferSize  int           `yaml:"buffer_size"` // pcap buffer size in bytes
-    Promiscuous bool          `yaml:"promiscuous"` // promiscuous mode
-    Timeout     time.Duration `yaml:"timeout"`     // pcap read timeout
+    Snaplen         int           `yaml:"snaplen"`           // max bytes per packet
+    BufferSize      int           `yaml:"buffer_size"`       // pcap buffer size in bytes
+    FrameBufferSize int           `yaml:"frame_buffer_size"` // parsed frame channel buffer size
+    Promiscuous     *bool         `yaml:"promiscuous"`       // promiscuous mode; defaults to true
+    Timeout         time.Duration `yaml:"timeout"`           // pcap read timeout
 }
 
 type ChannelHoppingConfig struct {
@@ -74,13 +75,15 @@ type ValidationError struct {
 **Constants:**
 ```go
 const (
-    DefaultLogLevel    = "info"
-    DefaultLogFormat   = "text"
-    DefaultSnaplen     = 65535
-    DefaultBufferSize  = 2097152 // 2 MB
-    DefaultPromiscuous = true
-    DefaultTimeout     = 100 * time.Millisecond
+    DefaultLogLevel        = "info"
+    DefaultLogFormat       = "text"
+    DefaultSnaplen         = 65535
+    DefaultBufferSize      = 2097152 // 2 MB
+    DefaultFrameBufferSize = 1024
+    DefaultPromiscuous     = true
+    DefaultTimeout         = 100 * time.Millisecond
     DefaultDwellTime       = 300 * time.Millisecond
+    DefaultWeightedDwell   = true
     DefaultMultiplier      = 2.5
     DefaultDedupWindow     = 30 * time.Second
     DefaultAlertBufferSize = 256
@@ -106,6 +109,8 @@ config.Load(path)
   │     │     ├─ log.format                         → DefaultLogFormat       (if empty)
   │     │     ├─ monitor.capture.snaplen             → DefaultSnaplen         (if 0)
   │     │     ├─ monitor.capture.buffer_size         → DefaultBufferSize      (if 0)
+  │     │     ├─ monitor.capture.frame_buffer_size   → DefaultFrameBufferSize (if 0)
+  │     │     ├─ monitor.capture.promiscuous         → DefaultPromiscuous     (if nil)
   │     │     ├─ monitor.capture.timeout             → DefaultTimeout         (if 0)
   │     │     ├─ monitor.channel_hopping.dwell       → DefaultDwellTime       (if 0)
   │     │     ├─ monitor.channel_hopping.channels_2ghz → DefaultChannels2GHz() (if nil)
@@ -146,7 +151,8 @@ config.Load(path)
 | `monitor.interface` | `MonitorConfig.Interface` | `string` | — | **Yes** |
 | `monitor.capture.snaplen` | `CaptureConfig.Snaplen` | `int` | `65535` | No |
 | `monitor.capture.buffer_size` | `CaptureConfig.BufferSize` | `int` | `2097152` (2 MB) | No |
-| `monitor.capture.promiscuous` | `CaptureConfig.Promiscuous` | `bool` | `true` | No |
+| `monitor.capture.frame_buffer_size` | `CaptureConfig.FrameBufferSize` | `int` | `1024` | No |
+| `monitor.capture.promiscuous` | `CaptureConfig.Promiscuous` | `*bool` | `true` | No |
 | `monitor.capture.timeout` | `CaptureConfig.Timeout` | `time.Duration` | `100ms` | No |
 | `monitor.channel_hopping.enabled` | `ChannelHoppingConfig.Enabled` | `bool` | — | No |
 | `monitor.channel_hopping.dwell` | `ChannelHoppingConfig.Dwell` | `time.Duration` | `300ms` | No |

@@ -31,6 +31,7 @@ specs/
 │   ├── lifecycle.md                graceful shutdown via signals
 │   ├── build-and-versioning.md     ldflags, Makefile, CI pipeline
 │   ├── capture.md                  pcap capture, monitor mode, channel hopping, pipeline
+│   ├── detection.md                detection engine, rule interface, security events
 │   └── parser.md                   802.11 frame parsing and classification
 │
 ├── contracts/                      interfaces between layers

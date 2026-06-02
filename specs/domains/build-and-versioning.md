@@ -52,6 +52,7 @@ make build-all
   │
   ├─► GOOS=linux   GOARCH=amd64  → bin/tobimaru-linux-amd64
   ├─► GOOS=linux   GOARCH=arm64  → bin/tobimaru-linux-arm64
+  ├─► GOOS=darwin  GOARCH=amd64  → bin/tobimaru-darwin-amd64
   └─► GOOS=darwin  GOARCH=arm64  → bin/tobimaru-darwin-arm64
 ```
 
@@ -75,9 +76,10 @@ Push/PR to main
   │
   └─► Job: test (macOS)
         ├─ Setup Go 1.26
-        ├─ go test -cover ./...
+        ├─ go test -race -cover -coverprofile=coverage-macos.out ./...
         ├─ go build -o tobimaru-macos ./cmd/tobimaru
-        └─ Smoke test: ./tobimaru-macos --version
+        ├─ Smoke test: ./tobimaru-macos --version
+        └─ Upload coverage artifact
 ```
 
 ### Version display
@@ -94,8 +96,8 @@ The `--version` flag is parsed in `cmd/tobimaru/main.go` and prints `version.Str
 - `Version`, `Commit`, and `Date` are always overwritten at build time via ldflags — their default values (`"dev"`, `"unknown"`, `"unknown"`) are only seen in `go run`
 - `-s -w` ldflags strip debug symbols and DWARF — reduces binary size for distribution
 - CI tests with Go 1.26, matching the `go.mod` declaration of `go 1.26.3`
-- Cross-compilation does NOT require CGO (`CGO_ENABLED=0` is implicit for pure Go packages)
-- `golangci-lint` uses v2 configuration format with 11 enabled linters + 2 formatters
+- Cross-compilation requires CGO (due to `gopacket/pcap` dependency on libpcap) — the CI installs `libpcap-dev` on Linux runners
+- `golangci-lint` uses v2 configuration format with ~41 enabled linters + 2 formatters
 - Every push and PR to `main` triggers the full CI pipeline
 
 ## Configuration
