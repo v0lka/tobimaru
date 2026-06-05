@@ -25,6 +25,22 @@
 | `detector.Engine.Register(rule Rule) error` | `internal/detector` | `cmd/tobimaru` | Register detection rules before starting |
 | `detector.Engine.Run(ctx, frames)` | `internal/detector` | `cmd/tobimaru` | Start dispatch goroutine reading from pipeline frames |
 | `detector.Engine.Alerts() <-chan *SecurityEvent` | `internal/detector` | `cmd/tobimaru` | Read-only channel of security alerts |
+| `state.NewEngine(cfg, wlCfg, logger) *Engine` | `internal/state` | `cmd/tobimaru` | Create network state engine from config |
+| `state.Engine.ProcessFrame(frame)` | `internal/state` | `cmd/tobimaru` | Update AP/client state from a parsed frame |
+| `state.Engine.RunEviction(ctx)` | `internal/state` | `cmd/tobimaru` | Start TTL eviction goroutine |
+| `state.Engine.Snapshot() *Snapshot` | `internal/state` | `cmd/tobimaru` | Get point-in-time state copy for persistence |
+| `state.Engine.Whitelist() *WhitelistEngine` | `internal/state` | `cmd/tobimaru` | Access whitelist/blacklist engine |
+| `state.NewLearningMode(cfg, engine, logger) *LearningMode` | `internal/state` | `cmd/tobimaru` | Create auto-learning controller |
+| `state.LearningMode.Run(ctx) []*WhitelistEntry` | `internal/state` | `cmd/tobimaru` | Run learning phase, return generated whitelist |
+| `storage.Open(cfg) (*SQLiteRepository, error)` | `internal/storage` | `cmd/tobimaru` | Open SQLite database, run migrations |
+| `storage.Repository.SaveEvent(ctx, event) error` | `internal/storage` | `cmd/tobimaru` | Persist a security event |
+| `storage.Repository.PruneEvents(ctx, max) (int64, error)` | `internal/storage` | `cmd/tobimaru` | Remove oldest events beyond max count |
+| `storage.Repository.SaveSnapshot(ctx, snap) error` | `internal/storage` | `cmd/tobimaru` | Persist a state snapshot |
+| `storage.Repository.PruneSnapshots(ctx, max) (int64, error)` | `internal/storage` | `cmd/tobimaru` | Remove old snapshots beyond max count |
+| `storage.Repository.ListWhitelist(ctx) ([]*WhitelistEntry, error)` | `internal/storage` | `cmd/tobimaru` | Load persisted whitelist |
+| `storage.Repository.ListBlacklist(ctx) ([]*BlacklistEntry, error)` | `internal/storage` | `cmd/tobimaru` | Load persisted blacklist |
+| `storage.Repository.SaveWhitelistEntry(ctx, entry) error` | `internal/storage` | `cmd/tobimaru` | Persist a whitelist entry |
+| `storage.Repository.Close() error` | `internal/storage` | `cmd/tobimaru` | Close database connection |
 | `platform.Detect() Capabilities` | `internal/platform` | `internal/capture` | Runtime detection of platform features and limitations |
 
 ## Initialization
@@ -38,7 +54,7 @@ flag.Parse()
 // 2. Handle --version (exit early, no deps needed)
 if *flagVersion { fmt.Println(version.String()); return }
 
-// 3. Load config (pulls from all config sections including capture)
+// 3. Load config (pulls from all config sections)
 cfg, err := config.Load(*flagConfig)
 // On failure: fmt.Fprintf(stderr) + os.Exit(1)
 
@@ -49,39 +65,67 @@ slog.SetDefault(logger)
 // 5. Log startup info (uses version vars from ldflags)
 slog.Info("starting", "version", version.Version, ...)
 
-// 6. Create capture pipeline from full config and logger
-pipeline, err := capture.NewPipeline(cfg, logger)
-// On failure: slog.Error + os.Exit(1) (logger is available)
+// 6. Open storage (if enabled) — early, before anything that writes to it
+var repo storage.Repository
+if cfg.Storage.Enabled {
+    repo, err = storage.Open(cfg.Storage)
+    // On failure: slog.Error + os.Exit(1)
+}
 
-// 7. Create shutdown manager and get signal context
+// 7. Create state engine (if enabled), load persisted whitelist/blacklist
+var stateEngine *state.Engine
+if cfg.State.Enabled {
+    stateEngine = state.NewEngine(cfg.State, cfg.Whitelist, logger)
+    if repo != nil {
+        wl, _ := repo.ListWhitelist(ctx)
+        bl, _ := repo.ListBlacklist(ctx)
+        stateEngine.Whitelist().LoadFromStorage(wl, bl)
+    }
+}
+
+// 8. Create capture pipeline from full config and logger
+pipeline, err := capture.NewPipeline(cfg, logger)
+// On failure: slog.Error + os.Exit(1)
+
+// 9. Create shutdown manager and get signal context
 sm := shutdown.NewManager()
 signalCtx := sm.WaitForSignal(context.Background())
 
-// 8. Start capture pipeline (enables monitor mode, opens pcap, starts goroutines)
+// 10. Start capture pipeline (enables monitor mode, opens pcap, starts goroutines)
 pipeline.Start(signalCtx)
 // On failure: slog.Error + os.Exit(1)
 
-// 9. Register cleanup hooks (pipeline stop)
-sm.Register("capture_stop", func() error { pipeline.Stop(); return nil })
-
-// 10. Create and start detection engine
-engine := detector.NewEngine(cfg.Detection)
-if cfg.Detection.Enabled {
-    engine.Run(signalCtx, pipeline.Frames())
-    go consumeAlerts(signalCtx, engine.Alerts())
-    sm.Register("detector_stop", func() error { return nil })
-} else {
-    go consumeFrames(signalCtx, pipeline.Frames())
+// 11. Register cleanup hooks (capture stop, storage close)
+//
+// capture_stop uses context.Background() rather than the shutdown context
+// because the pipeline must complete its cleanup (disable monitor mode,
+// restore the interface) regardless of any shutdown deadline. The internal
+// 5s timeout inside Pipeline.Stop bounds the operation, and the shutdown
+// manager's overall deadline still bounds total shutdown duration.
+sm.Register("capture_stop", func() error { return pipeline.Stop(context.Background()) })
+if repo != nil {
+    sm.Register("storage_close", func() error { return repo.Close() })
 }
 
-// 11. Block until signal
-<-signalCtx.Done()
+// 12. Create detection engine
+engine := detector.NewEngine(cfg.Detection)
 
-// 12. Shutdown
-slog.Info("shutting down...")
+// 13. Wire frame consumers (fan-out when both detection + state are active)
+// Detection+State: fanOut(pipeline.Frames(), detectorCh, stateCh)
+// Detection only: engine.Run(signalCtx, pipeline.Frames())
+// State only: consumeStateFrames(signalCtx, pipeline.Frames(), stateEngine)
+// Neither: consumeFrames(signalCtx, pipeline.Frames())
+
+// 14. Start eviction, snapshot writer, auto-learning goroutines
+if stateEngine != nil { go stateEngine.RunEviction(signalCtx) }
+if stateEngine != nil && repo != nil { go runSnapshotWriter(...) }
+if stateEngine != nil && cfg.Whitelist.AutoLearning.Enabled { go autoLearn(...) }
+
+// 15. Consumer stop hook, block until signal, shutdown
+sm.Register("consumer_stop", func() error { consumerWG.Wait(); return nil })
+<-signalCtx.Done()
 shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-if err := sm.Shutdown(shutdownCtx); err != nil { os.Exit(1) }
-slog.Info("shutdown complete")
+sm.Shutdown(shutdownCtx)
 ```
 
 ## Data Flow Across Boundary
@@ -89,26 +133,32 @@ slog.Info("shutdown complete")
 ```
 cmd/tobimaru/main.go
     │
-    │  config.Load(path) ──────────► *config.Config
-    │  logging.New(cfg.Log) ───────► *slog.Logger
+    │  config.Load(path) ──────► *config.Config
+    │  logging.New(cfg.Log) ───► *slog.Logger
+    │  storage.Open(cfg.Storage) ─► storage.Repository
+    │  state.NewEngine(cfg, wlCfg) ─► *state.Engine
     │  capture.NewPipeline(cfg) ───► *capture.Pipeline
     │  shutdown.NewManager() ──────► *shutdown.Manager
     │
-    │  Pipeline.Start(signalCtx) ──► enables monitor mode, opens pcap, starts goroutines
+    │  Pipeline.Start(signalCtx) ──► enables monitor mode, opens pcap
     │  Pipeline.Frames() ──────────► <-chan *parser.ParsedFrame
-    │  detector.NewEngine(cfg.Detection) ──► *detector.Engine
-    │  Engine.Run(signalCtx, frames) ──────► starts dispatch goroutine
+    │  fanOut(source, sinks...) ───► distributes frames to detector + state
+    │  detector.NewEngine(cfg) ────► *detector.Engine
+    │  Engine.Run(signalCtx, ch) ──► starts dispatch goroutine
     │  Engine.Alerts() ────────────► <-chan *detector.SecurityEvent
-    │  Manager.Register() ◄──────── cleanup hooks registered during init
-    │  Manager.WaitForSignal() ────► context (blocks until signal)
-    │  Manager.Shutdown(ctx) ──────► runs hooks (Pipeline.Stop restores interface)
+    │  state.Engine.ProcessFrame() ► updates AP/client maps per frame
+    │  state.Engine.Snapshot() ────► *state.Snapshot (periodically persisted)
+    │  repo.SaveEvent(event) ──────► persists security events to SQLite
+    │  Manager.Shutdown(ctx) ──────► runs hooks (Pipeline.Stop, repo.Close)
     │
     ▼
 *config.Config flows INTO main from internal/config
 *slog.Logger flows OUT of main (set as default, used by all code)
+storage.Repository lives inside main, opened early and closed at shutdown
+*state.Engine lives inside main, processes frames, provides state snapshots
 *capture.Pipeline lives inside main, started and stopped by main
 *detector.Engine lives inside main, created and started by main
-<-chan *parser.ParsedFrame flows from pipeline into engine.Run() (or consumeFrames when detection disabled)
+<-chan *parser.ParsedFrame flows from pipeline via fanOut to detector + state
 <-chan *detector.SecurityEvent flows from engine into consumeAlerts goroutine
 *shutdown.Manager lives inside main, receives hooks from components
 ```
@@ -118,11 +168,15 @@ Direction: `internal/*` → `cmd/tobimaru` (all imports go UP to main). `cmd/tob
 ## Error Propagation
 
 - Config loading failure → `os.Exit(1)` via `fmt.Fprintf(stderr)` — no graceful shutdown needed (nothing initialized yet)
+- Storage open failure → `slog.Error` + `os.Exit(1)` — logger is available
 - Pipeline creation failure → `slog.Error` + `os.Exit(1)` — logger is available, config was loaded
 - Pipeline start failure → `slog.Error` + `os.Exit(1)` — monitor mode or pcap handle could not be opened
 - Shutdown failure → `os.Exit(1)` after logging the error
 - Individual hook failures during shutdown → aggregated via `errors.Join`, does NOT prevent other hooks from running
 - Context deadline exceeded during shutdown → remaining hooks are skipped, shutdown returns immediately with error
+- Storage write failures (SaveEvent, SaveSnapshot) → logged as warnings, do NOT crash the daemon
+- Storage event pruning failures (PruneEvents) → logged as warnings, do NOT crash the daemon
+- Whitelist/blacklist load failures at startup → logged as warnings; the engine continues with empty lists
 
 ## Breaking Change Checklist
 

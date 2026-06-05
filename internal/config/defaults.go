@@ -20,7 +20,7 @@ func DefaultChannels5GHz() []int {
 	}
 }
 
-func applyDefaults(cfg *Config) {
+func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value checks, not branching complexity
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = DefaultLogLevel
 	}
@@ -60,5 +60,32 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Detection.AlertBufferSize == 0 {
 		cfg.Detection.AlertBufferSize = DefaultAlertBufferSize
+	}
+
+	// State engine defaults.
+	if cfg.State.TTL == 0 {
+		cfg.State.TTL = DefaultStateTTL
+	}
+	if cfg.State.SweepInterval == 0 {
+		cfg.State.SweepInterval = DefaultStateSweepInterval
+	}
+
+	// Auto-learning defaults.
+	if cfg.Whitelist.AutoLearning.Duration == 0 {
+		cfg.Whitelist.AutoLearning.Duration = DefaultAutoLearningDuration
+	}
+
+	// Storage defaults.
+	if cfg.Storage.Path == "" {
+		cfg.Storage.Path = DefaultStoragePath
+	}
+	if cfg.Storage.SnapshotInterval == 0 {
+		cfg.Storage.SnapshotInterval = DefaultSnapshotInterval
+	}
+	if cfg.Storage.MaxSnapshots == 0 {
+		cfg.Storage.MaxSnapshots = DefaultMaxSnapshots
+	}
+	if cfg.Storage.MaxEvents == 0 {
+		cfg.Storage.MaxEvents = DefaultMaxEvents
 	}
 }

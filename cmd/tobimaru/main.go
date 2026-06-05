@@ -17,13 +17,21 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/logging"
 	"github.com/vkochetkov/tobimaru/internal/parser"
 	"github.com/vkochetkov/tobimaru/internal/shutdown"
+	"github.com/vkochetkov/tobimaru/internal/state"
+	"github.com/vkochetkov/tobimaru/internal/storage"
 	"github.com/vkochetkov/tobimaru/internal/version"
 )
 
 // frameStatsInterval controls how often consumeFrames reports capture stats.
 const frameStatsInterval = 5 * time.Second
 
-func main() {
+// pruneEventInterval is the number of stored events between PruneEvents
+// calls in consumeAlerts. Pruning runs periodically rather than on every
+// insert so that the cost of the DELETE-with-subquery scales with retention
+// rather than ingest rate.
+const pruneEventInterval uint64 = 100
+
+func main() { //nolint:gocyclo // orchestrator with linear initialization sequence
 	flagConfig := flag.String("config", "configs/tobimaru.yaml", "path to configuration file")
 	flagVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -48,6 +56,46 @@ func main() {
 		"date", version.Date,
 	)
 
+	// Open storage (early, before anything that writes to it).
+	var repo storage.Repository
+	if cfg.Storage.Enabled {
+		repo, err = storage.Open(cfg.Storage)
+		if err != nil {
+			slog.Error("Failed to open storage", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("storage opened", "path", cfg.Storage.Path)
+	}
+
+	// Create state engine.
+	var stateEngine *state.Engine
+	if cfg.State.Enabled {
+		stateEngine = state.NewEngine(cfg.State, cfg.Whitelist, logger)
+		slog.Info("state engine created",
+			"ttl", cfg.State.TTL,
+			"sweep_interval", cfg.State.SweepInterval,
+		)
+
+		// Load persisted whitelist/blacklist from storage.
+		if repo != nil {
+			wl, wlErr := repo.ListWhitelist(context.Background())
+			bl, blErr := repo.ListBlacklist(context.Background())
+			if wlErr != nil {
+				slog.Warn("failed to load whitelist from storage", "error", wlErr)
+			}
+			if blErr != nil {
+				slog.Warn("failed to load blacklist from storage", "error", blErr)
+			}
+			if wlErr == nil && blErr == nil {
+				stateEngine.Whitelist().LoadFromStorage(wl, bl)
+				slog.Info("loaded persisted lists",
+					"whitelist_entries", len(wl),
+					"blacklist_entries", len(bl),
+				)
+			}
+		}
+	}
+
 	// Create capture pipeline with the configured logger.
 	pipeline, err := capture.NewPipeline(cfg, logger)
 	if err != nil {
@@ -69,6 +117,12 @@ func main() {
 		return pipeline.Stop(context.Background())
 	})
 
+	if repo != nil {
+		sm.Register("storage_close", func() error {
+			return repo.Close()
+		})
+	}
+
 	// Wire detection engine.
 	engine := detector.NewEngine(cfg.Detection)
 	slog.Info("detection engine created",
@@ -85,16 +139,68 @@ func main() {
 
 	// Track consumer goroutines so shutdown waits for their final log lines.
 	var consumerWG sync.WaitGroup
+	bufSize := cfg.Monitor.Capture.FrameBufferSize
 
-	if cfg.Detection.Enabled {
+	if cfg.Detection.Enabled && stateEngine != nil {
+		// Both detection and state active: fan-out needed.
+		detectorCh := make(chan *parser.ParsedFrame, bufSize)
+		stateCh := make(chan *parser.ParsedFrame, bufSize)
+		consumerWG.Go(func() {
+			fanOut(signalCtx, pipeline.Frames(), detectorCh, stateCh)
+		})
+		engine.Run(signalCtx, detectorCh)
+		consumerWG.Go(func() {
+			consumeAlerts(signalCtx, engine.Alerts(), repo, cfg.Storage.MaxEvents)
+		})
+		consumerWG.Go(func() {
+			consumeStateFrames(signalCtx, stateCh, stateEngine)
+		})
+	} else if cfg.Detection.Enabled {
+		// Detection only, no state engine.
 		engine.Run(signalCtx, pipeline.Frames())
 		consumerWG.Go(func() {
-			consumeAlerts(signalCtx, engine.Alerts())
+			consumeAlerts(signalCtx, engine.Alerts(), repo, cfg.Storage.MaxEvents)
+		})
+	} else if stateEngine != nil {
+		// State only, no detection.
+		consumerWG.Go(func() {
+			consumeStateFrames(signalCtx, pipeline.Frames(), stateEngine)
 		})
 	} else {
-		// Detection disabled — continue with simple frame consumer for dev/debug.
+		// Neither: debug consumer.
 		consumerWG.Go(func() {
 			consumeFrames(signalCtx, pipeline.Frames())
+		})
+	}
+
+	// Start eviction goroutine.
+	if stateEngine != nil {
+		consumerWG.Go(func() {
+			stateEngine.RunEviction(signalCtx)
+		})
+	}
+
+	// Start snapshot writer.
+	if stateEngine != nil && repo != nil {
+		consumerWG.Go(func() {
+			runSnapshotWriter(signalCtx, stateEngine, repo,
+				cfg.Storage.SnapshotInterval, cfg.Storage.MaxSnapshots)
+		})
+	}
+
+	// Start auto-learning if enabled.
+	if stateEngine != nil && cfg.Whitelist.AutoLearning.Enabled {
+		consumerWG.Go(func() {
+			lm := state.NewLearningMode(cfg.Whitelist.AutoLearning, stateEngine, logger)
+			entries := lm.Run(signalCtx)
+			if repo != nil && len(entries) > 0 {
+				for _, e := range entries {
+					if err := repo.SaveWhitelistEntry(signalCtx, e); err != nil {
+						slog.Warn("failed to persist auto-learned whitelist entry", "error", err)
+					}
+				}
+				slog.Info("auto-learning whitelist persisted", "entries", len(entries))
+			}
 		})
 	}
 
@@ -132,6 +238,78 @@ func main() {
 	slog.Info("Shutdown complete")
 }
 
+// fanOut reads from a single source channel and distributes each frame
+// to all provided sink channels. It closes all sinks when the source
+// closes or ctx is canceled.
+func fanOut(ctx context.Context, source <-chan *parser.ParsedFrame, sinks ...chan<- *parser.ParsedFrame) {
+	defer func() {
+		for _, s := range sinks {
+			close(s)
+		}
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case frame, ok := <-source:
+			if !ok {
+				return
+			}
+			for _, s := range sinks {
+				select {
+				case s <- frame:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}
+}
+
+// consumeStateFrames receives parsed frames and updates the state engine.
+func consumeStateFrames(ctx context.Context, frames <-chan *parser.ParsedFrame, eng *state.Engine) {
+	var count uint64
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("state consumer stopped", "total_frames", count)
+			return
+		case frame, ok := <-frames:
+			if !ok {
+				slog.Info("state consumer stopped", "total_frames", count)
+				return
+			}
+			count++
+			eng.ProcessFrame(frame)
+		}
+	}
+}
+
+// runSnapshotWriter periodically persists state snapshots and prunes old ones.
+func runSnapshotWriter(ctx context.Context, eng *state.Engine, repo storage.Repository, interval time.Duration, maxSnapshots int) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			snap := eng.Snapshot()
+			if err := repo.SaveSnapshot(ctx, snap); err != nil {
+				slog.Warn("failed to save state snapshot", "error", err)
+				continue
+			}
+			pruned, err := repo.PruneSnapshots(ctx, maxSnapshots)
+			if err != nil {
+				slog.Warn("failed to prune old snapshots", "error", err)
+			} else if pruned > 0 {
+				slog.Debug("pruned old snapshots", "count", pruned)
+			}
+		}
+	}
+}
+
 // consumeFrames receives parsed frames from the capture pipeline and processes
 // them. In the current phase, it logs summary information about captured frames.
 // This is used when detection is disabled for development and debugging.
@@ -167,8 +345,10 @@ func consumeFrames(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 }
 
 // consumeAlerts receives security events from the detection engine and logs
-// them at appropriate levels based on severity.
-func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent) {
+// them at appropriate levels based on severity. If a repository is provided,
+// events are also persisted to storage and the events table is periodically
+// pruned to maxEvents (when > 0).
+func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent, repo storage.Repository, maxEvents int) {
 	var count uint64
 
 	for {
@@ -204,6 +384,19 @@ func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent) {
 				slog.Warn("security alert", args...)
 			default:
 				slog.Info("security alert", args...)
+			}
+
+			// Persist to storage if available.
+			if repo != nil {
+				if err := repo.SaveEvent(ctx, event); err != nil {
+					slog.Warn("failed to persist security event", "error", err)
+				} else if maxEvents > 0 && count%pruneEventInterval == 0 {
+					if pruned, err := repo.PruneEvents(ctx, maxEvents); err != nil {
+						slog.Warn("failed to prune old events", "error", err)
+					} else if pruned > 0 {
+						slog.Debug("pruned old events", "count", pruned)
+					}
+				}
 			}
 		}
 	}

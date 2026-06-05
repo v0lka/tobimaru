@@ -26,6 +26,9 @@ type Config struct {
 	Log       LogConfig       `yaml:"log"`
 	Monitor   MonitorConfig   `yaml:"monitor"`
 	Detection DetectionConfig `yaml:"detection"`
+	State     StateConfig     `yaml:"state"`
+	Whitelist WhitelistConfig `yaml:"whitelist"`
+	Storage   StorageConfig   `yaml:"storage"`
 }
 
 // DetectionConfig holds intrusion detection configuration.
@@ -39,6 +42,50 @@ type DetectionConfig struct {
 
 	// AlertBufferSize is the capacity of the buffered alerts channel.
 	AlertBufferSize int `yaml:"alert_buffer_size"`
+}
+
+// StateConfig holds network state engine configuration.
+type StateConfig struct {
+	// Enabled is the master switch for the state engine.
+	Enabled bool `yaml:"enabled"`
+
+	// TTL is the duration after which unobserved APs/clients are evicted.
+	TTL time.Duration `yaml:"ttl"`
+
+	// SweepInterval is how often the eviction sweep runs.
+	SweepInterval time.Duration `yaml:"sweep_interval"`
+}
+
+// WhitelistConfig holds whitelist/blacklist and auto-learning configuration.
+type WhitelistConfig struct {
+	AutoLearning AutoLearningConfig `yaml:"auto_learning"`
+}
+
+// AutoLearningConfig holds auto-learning mode settings.
+type AutoLearningConfig struct {
+	// Enabled activates auto-learning mode at startup.
+	Enabled bool `yaml:"enabled"`
+
+	// Duration is the length of the learning phase.
+	Duration time.Duration `yaml:"duration"`
+}
+
+// StorageConfig holds persistent storage configuration.
+type StorageConfig struct {
+	// Enabled is the master switch for SQLite storage.
+	Enabled bool `yaml:"enabled"`
+
+	// Path is the SQLite database file path.
+	Path string `yaml:"path"`
+
+	// SnapshotInterval is how often state snapshots are persisted.
+	SnapshotInterval time.Duration `yaml:"snapshot_interval"`
+
+	// MaxSnapshots is the maximum number of snapshots to retain.
+	MaxSnapshots int `yaml:"max_snapshots"`
+
+	// MaxEvents is the maximum number of security events to retain.
+	MaxEvents int `yaml:"max_events"`
 }
 
 // Log level string constants used in configuration.
@@ -69,6 +116,19 @@ const (
 	DefaultDedupWindow     = 30 * time.Second
 	DefaultAlertBufferSize = 256
 	DefaultFrameBufferSize = 1024
+
+	// State engine defaults.
+	DefaultStateTTL           = 10 * time.Minute
+	DefaultStateSweepInterval = 1 * time.Minute
+
+	// Auto-learning defaults.
+	DefaultAutoLearningDuration = 15 * time.Minute
+
+	// Storage defaults.
+	DefaultStoragePath      = "tobimaru.db"
+	DefaultSnapshotInterval = 5 * time.Minute
+	DefaultMaxSnapshots     = 288 // 24 hours at 5-minute intervals
+	DefaultMaxEvents        = 100000
 )
 
 // LogConfig holds logging-related configuration.
@@ -117,6 +177,12 @@ type ValidationError struct {
 
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("configuration validation failed: %v", errors.Join(e.Errors...))
+}
+
+// Unwrap returns the list of underlying validation errors so that callers
+// can use errors.Is / errors.As against individual sentinel errors.
+func (e *ValidationError) Unwrap() []error {
+	return e.Errors
 }
 
 // Load reads a YAML configuration file from the given path, applies defaults,

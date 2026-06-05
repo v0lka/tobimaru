@@ -36,6 +36,17 @@ cmd/tobimaru (entry point, orchestrator)
     │       ├──► internal/config (for DetectionConfig type)
     │       └──► internal/parser (for ParsedFrame type)
     │
+    ├──► internal/state      (network state engine, AP/client maps, whitelist, auto-learning)
+    │       │
+    │       ├──► internal/config (for StateConfig, WhitelistConfig types)
+    │       └──► internal/parser (for ParsedFrame type)
+    │
+    ├──► internal/storage    (persistence layer, SQLite repository)
+    │       │
+    │       ├──► internal/config (for StorageConfig type)
+    │       ├──► internal/detector (for SecurityEvent type)
+    │       └──► internal/state (for APInfo, ClientInfo, WhitelistEntry, BlacklistEntry, Snapshot types)
+    │
     ├──► internal/platform   (runtime platform capabilities detection)
     │       │
     │       └── no internal imports (self-contained)
@@ -60,9 +71,14 @@ cmd/tobimaru (entry point, orchestrator)
   - `internal/capture` → `internal/platform` (for `Capabilities` type)
   - `internal/detector` → `internal/config` (for `DetectionConfig` type)
   - `internal/detector` → `internal/parser` (for `ParsedFrame` type)
+  - `internal/state` → `internal/config` (for `StateConfig`, `WhitelistConfig` types)
+  - `internal/state` → `internal/parser` (for `ParsedFrame` type)
+  - `internal/storage` → `internal/config` (for `StorageConfig` type)
+  - `internal/storage` → `internal/detector` (for `SecurityEvent` type)
+  - `internal/storage` → `internal/state` (for `APInfo`, `ClientInfo`, `WhitelistEntry`, `BlacklistEntry`, `Snapshot` types)
 - `internal/config`, `internal/shutdown`, `internal/version`, `internal/parser`, `internal/platform`, and `internal/testutil` are self-contained with zero project imports
 - No `internal/` package imports `cmd/`
-- All future Phase packages (`detector/`, `state/`, etc.) follow the same rule: reside in `internal/` and are consumed by `cmd/tobimaru`
+- All future Phase packages (`analytics/`, etc.) follow the same rule: reside in `internal/` and are consumed by `cmd/tobimaru`
 
 ## Top-Level Directory Responsibilities
 
