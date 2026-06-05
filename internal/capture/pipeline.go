@@ -83,6 +83,17 @@ func (p *Pipeline) Capabilities() platform.Capabilities {
 	return p.caps
 }
 
+// CurrentChannel returns the channel currently being monitored. When channel
+// hopping is enabled it reports the channel last set by the hopper. When
+// hopping is disabled it returns 0 (the kernel keeps whatever channel the
+// adapter was on at startup, which the daemon does not track).
+func (p *Pipeline) CurrentChannel() int {
+	if p.hopper == nil {
+		return 0
+	}
+	return p.hopper.CurrentChannel()
+}
+
 // logCapabilities logs detected platform capabilities and any limitations.
 func logCapabilities(logger *slog.Logger, caps platform.Capabilities) {
 	logger.Info("platform capabilities",

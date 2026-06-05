@@ -88,4 +88,28 @@ func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value chec
 	if cfg.Storage.MaxEvents == 0 {
 		cfg.Storage.MaxEvents = DefaultMaxEvents
 	}
+
+	// API defaults.
+	if cfg.API.Listen == "" {
+		cfg.API.Listen = DefaultAPIListen
+	}
+	if cfg.API.ReadTimeout == 0 {
+		cfg.API.ReadTimeout = DefaultAPIReadTimeout
+	}
+	if cfg.API.WriteTimeout == 0 {
+		cfg.API.WriteTimeout = DefaultAPIWriteTimeout
+	}
+	if cfg.API.IdleTimeout == 0 {
+		cfg.API.IdleTimeout = DefaultAPIIdleTimeout
+	}
+	if cfg.API.ShutdownTimeout == 0 {
+		cfg.API.ShutdownTimeout = DefaultAPIShutdownTimeout
+	}
+	if cfg.API.Auth.SessionTTL == 0 {
+		cfg.API.Auth.SessionTTL = DefaultAPISessionTTL
+	}
+	// When the API is enabled, default auth to enabled for security.
+	if cfg.API.Enabled && !cfg.API.Auth.Enabled {
+		cfg.API.Auth.Enabled = true
+	}
 }

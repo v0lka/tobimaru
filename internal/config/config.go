@@ -29,6 +29,59 @@ type Config struct {
 	State     StateConfig     `yaml:"state"`
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Storage   StorageConfig   `yaml:"storage"`
+	API       APIConfig       `yaml:"api"`
+}
+
+// APIConfig holds HTTP API server configuration.
+type APIConfig struct {
+	// Enabled is the master switch for the HTTP API server and dashboard.
+	Enabled bool `yaml:"enabled"`
+
+	// Listen is the bind address (host:port). Defaults to 127.0.0.1:8080.
+	Listen string `yaml:"listen"`
+
+	// ReadTimeout is the maximum duration for reading the entire request.
+	ReadTimeout time.Duration `yaml:"read_timeout"`
+
+	// WriteTimeout is the maximum duration before writing the response times out.
+	// Note: SSE connections disable this per-request via http.ResponseController.
+	WriteTimeout time.Duration `yaml:"write_timeout"`
+
+	// IdleTimeout is the maximum duration to keep idle keep-alive connections.
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+
+	// ShutdownTimeout caps the graceful HTTP shutdown duration.
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+
+	// CORS holds cross-origin resource sharing settings.
+	CORS CORSConfig `yaml:"cors"`
+
+	// Auth holds authentication configuration for the API and dashboard.
+	Auth AuthConfig `yaml:"auth"`
+}
+
+// CORSConfig holds CORS settings for the API.
+type CORSConfig struct {
+	// AllowedOrigins is the list of allowed origins; empty = same-origin only.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
+// AuthConfig holds authentication configuration.
+type AuthConfig struct {
+	// Enabled toggles authentication. When false, every request is treated as
+	// an authenticated admin (useful for local development).
+	Enabled bool `yaml:"enabled"`
+
+	// SessionTTL is how long an issued session token remains valid.
+	SessionTTL time.Duration `yaml:"session_ttl"`
+
+	// AdminPasswordHash is the bcrypt hash of the admin password. Required
+	// when Auth.Enabled is true.
+	AdminPasswordHash string `yaml:"admin_password_hash"`
+
+	// UserPasswordHash is the bcrypt hash of the user (read-only) password.
+	// Optional; when empty the "user" account is disabled.
+	UserPasswordHash string `yaml:"user_password_hash"`
 }
 
 // DetectionConfig holds intrusion detection configuration.
@@ -129,6 +182,14 @@ const (
 	DefaultSnapshotInterval = 5 * time.Minute
 	DefaultMaxSnapshots     = 288 // 24 hours at 5-minute intervals
 	DefaultMaxEvents        = 100000
+
+	// API server defaults.
+	DefaultAPIListen          = "127.0.0.1:8080"
+	DefaultAPIReadTimeout     = 15 * time.Second
+	DefaultAPIWriteTimeout    = 30 * time.Second
+	DefaultAPIIdleTimeout     = 60 * time.Second
+	DefaultAPIShutdownTimeout = 5 * time.Second
+	DefaultAPISessionTTL      = 24 * time.Hour
 )
 
 // LogConfig holds logging-related configuration.

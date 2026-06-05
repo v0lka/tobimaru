@@ -42,6 +42,13 @@
 | `storage.Repository.SaveWhitelistEntry(ctx, entry) error` | `internal/storage` | `cmd/tobimaru` | Persist a whitelist entry |
 | `storage.Repository.Close() error` | `internal/storage` | `cmd/tobimaru` | Close database connection |
 | `platform.Detect() Capabilities` | `internal/platform` | `internal/capture` | Runtime detection of platform features and limitations |
+| `api.NewServer(cfg, deps) (*Server, error)` | `internal/api` | `cmd/tobimaru` | Build chi-routed HTTP server |
+| `api.Server.Run(ctx) error` | `internal/api` | `cmd/tobimaru` | ListenAndServe + session pruner until ctx cancel |
+| `api.Server.Shutdown(ctx) error` | `internal/api` | `cmd/tobimaru` | Graceful HTTP shutdown |
+| `api.NewHub(logger) *Hub` | `internal/api` | `cmd/tobimaru` | Create SSE fan-out broadcaster |
+| `api.Hub.Run(ctx)` | `internal/api` | `cmd/tobimaru` | Drain publish queue and broadcast |
+| `api.Hub.Publish(Message)` | `internal/api` | `cmd/tobimaru` | Push event/status updates to subscribed dashboards |
+| `api.NewEventMessage(event) Message` | `internal/api` | `cmd/tobimaru` | Wrap a security event for SSE broadcast |
 
 ## Initialization
 
@@ -120,6 +127,15 @@ engine := detector.NewEngine(cfg.Detection)
 if stateEngine != nil { go stateEngine.RunEviction(signalCtx) }
 if stateEngine != nil && repo != nil { go runSnapshotWriter(...) }
 if stateEngine != nil && cfg.Whitelist.AutoLearning.Enabled { go autoLearn(...) }
+
+// 14b. Start API server (REST + SSE + dashboard) when cfg.API.Enabled
+if cfg.API.Enabled {
+    apiHub := api.NewHub(logger)                     // already created earlier so consumeAlerts can publish
+    apiSrv, _ := api.NewServer(cfg.API, api.Deps{...})
+    go apiHub.Run(signalCtx)
+    go apiSrv.Run(signalCtx)
+    sm.Register("api_stop", func() error { ... apiSrv.Shutdown(...) ... })
+}
 
 // 15. Consumer stop hook, block until signal, shutdown
 sm.Register("consumer_stop", func() error { consumerWG.Wait(); return nil })

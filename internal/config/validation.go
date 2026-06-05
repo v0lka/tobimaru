@@ -1,6 +1,10 @@
 package config
 
-import "errors"
+import (
+	"errors"
+	"net"
+	"strings"
+)
 
 var validLogLevels = map[string]bool{
 	LogLevelDebug: true,
@@ -26,6 +30,10 @@ var (
 	ErrInvalidStoragePath      = errors.New("storage.path is required when storage is enabled")
 	ErrInvalidSnapshotInterval = errors.New("storage.snapshot_interval must be positive when storage is enabled (0 uses default; negative is rejected)")
 	ErrInvalidLearningDuration = errors.New("whitelist.auto_learning.duration must be positive when enabled (0 uses default; negative is rejected)")
+	ErrInvalidAPIListen        = errors.New("api.listen must be a valid host:port when api is enabled")
+	ErrInvalidAPITimeout       = errors.New("api.{read,write,idle,shutdown}_timeout must be positive when api is enabled")
+	ErrMissingAdminHash        = errors.New("api.auth.admin_password_hash is required when api.auth is enabled")
+	ErrInvalidPasswordHash     = errors.New("api.auth password hash must look like a bcrypt hash ($2a$..., $2b$..., or $2y$...)")
 )
 
 func validate(cfg *Config) error { //nolint:gocyclo // sequential field validation, linear flow
@@ -77,6 +85,27 @@ func validate(cfg *Config) error { //nolint:gocyclo // sequential field validati
 		}
 	}
 
+	// API validation (only when enabled).
+	if cfg.API.Enabled {
+		if _, _, err := net.SplitHostPort(cfg.API.Listen); err != nil {
+			errs = append(errs, ErrInvalidAPIListen)
+		}
+		if cfg.API.ReadTimeout <= 0 || cfg.API.WriteTimeout <= 0 ||
+			cfg.API.IdleTimeout <= 0 || cfg.API.ShutdownTimeout <= 0 {
+			errs = append(errs, ErrInvalidAPITimeout)
+		}
+		if cfg.API.Auth.Enabled {
+			if cfg.API.Auth.AdminPasswordHash == "" {
+				errs = append(errs, ErrMissingAdminHash)
+			} else if !looksLikeBcrypt(cfg.API.Auth.AdminPasswordHash) {
+				errs = append(errs, ErrInvalidPasswordHash)
+			}
+			if cfg.API.Auth.UserPasswordHash != "" && !looksLikeBcrypt(cfg.API.Auth.UserPasswordHash) {
+				errs = append(errs, ErrInvalidPasswordHash)
+			}
+		}
+	}
+
 	if len(errs) > 0 {
 		return &ValidationError{Errors: errs}
 	}
@@ -87,4 +116,17 @@ func validate(cfg *Config) error { //nolint:gocyclo // sequential field validati
 func IsValidationError(err error) bool {
 	var ve *ValidationError
 	return errors.As(err, &ve)
+}
+
+// looksLikeBcrypt performs a syntactic check that the string is shaped like a
+// bcrypt-encoded password hash. The full check (CompareHashAndPassword) is
+// done at runtime by the auth layer; this guards against typos and missing
+// hashes at startup.
+func looksLikeBcrypt(s string) bool {
+	if len(s) < 60 {
+		return false
+	}
+	return strings.HasPrefix(s, "$2a$") ||
+		strings.HasPrefix(s, "$2b$") ||
+		strings.HasPrefix(s, "$2y$")
 }

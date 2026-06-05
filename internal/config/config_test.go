@@ -510,3 +510,84 @@ whitelist:
 		t.Errorf("got %v, want ErrInvalidLearningDuration", err)
 	}
 }
+
+// --- API config tests ---
+
+func TestAPIDefaults(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: false
+`
+	cfg, err := LoadReader(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.API.Listen != DefaultAPIListen {
+		t.Errorf("got listen %q, want %q", cfg.API.Listen, DefaultAPIListen)
+	}
+	if cfg.API.ReadTimeout != DefaultAPIReadTimeout {
+		t.Errorf("got read_timeout %v, want %v", cfg.API.ReadTimeout, DefaultAPIReadTimeout)
+	}
+	if cfg.API.Auth.SessionTTL != DefaultAPISessionTTL {
+		t.Errorf("got session_ttl %v, want %v", cfg.API.Auth.SessionTTL, DefaultAPISessionTTL)
+	}
+}
+
+func TestAPIInvalidListen(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: true
+  listen: "not-a-host-port"
+  auth:
+    enabled: false
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if !errors.Is(err, ErrInvalidAPIListen) {
+		t.Errorf("got %v, want ErrInvalidAPIListen", err)
+	}
+}
+
+func TestAPIAuthRequiresAdminHash(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: true
+  listen: "127.0.0.1:8080"
+  auth:
+    enabled: true
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if !errors.Is(err, ErrMissingAdminHash) {
+		t.Errorf("got %v, want ErrMissingAdminHash", err)
+	}
+}
+
+func TestAPIRejectsBadBcryptHash(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: true
+  listen: "127.0.0.1:8080"
+  auth:
+    enabled: true
+    admin_password_hash: "plaintext-not-bcrypt"
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if !errors.Is(err, ErrInvalidPasswordHash) {
+		t.Errorf("got %v, want ErrInvalidPasswordHash", err)
+	}
+}
+
+func TestAPIAcceptsRealBcryptHash(t *testing.T) {
+	// $2a$ prefix and 60-char total length — enough for the syntactic check.
+	yaml := "\nmonitor:\n  interface: wlan0\napi:\n  enabled: true\n  listen: \"127.0.0.1:8080\"\n  auth:\n    enabled: true\n    admin_password_hash: \"$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345\"\n"
+	if _, err := LoadReader(strings.NewReader(yaml)); err != nil {
+		t.Errorf("got %v, want no error", err)
+	}
+}

@@ -47,6 +47,21 @@ cmd/tobimaru (entry point, orchestrator)
     │       ├──► internal/detector (for SecurityEvent type)
     │       └──► internal/state (for APInfo, ClientInfo, WhitelistEntry, BlacklistEntry, Snapshot types)
     │
+    ├──► internal/api        (HTTP API + SSE hub + embedded SPA dashboard)
+    │       │
+    │       ├──► internal/config   (for APIConfig, AuthConfig, CORSConfig)
+    │       ├──► internal/state    (for *Engine read access in handlers)
+    │       ├──► internal/storage  (for Repository: events, sessions, lists)
+    │       ├──► internal/detector (for *Engine read access + SetDedupWindow, SecurityEvent)
+    │       ├──► internal/capture  (for *Pipeline.Capabilities and CurrentChannel)
+    │       ├──► internal/version  (for build info on /api/status)
+    │       ├──► internal/logging  (for Level/SetLevel runtime adjustments)
+    │       └──► internal/api/web  (embedded SPA assets via go:embed)
+    │
+    ├──► internal/api/web    (embedded React+Vite dashboard bundle)
+    │       │
+    │       └── no internal imports (self-contained, used only by internal/api)
+    │
     ├──► internal/platform   (runtime platform capabilities detection)
     │       │
     │       └── no internal imports (self-contained)
@@ -76,7 +91,9 @@ cmd/tobimaru (entry point, orchestrator)
   - `internal/storage` → `internal/config` (for `StorageConfig` type)
   - `internal/storage` → `internal/detector` (for `SecurityEvent` type)
   - `internal/storage` → `internal/state` (for `APInfo`, `ClientInfo`, `WhitelistEntry`, `BlacklistEntry`, `Snapshot` types)
-- `internal/config`, `internal/shutdown`, `internal/version`, `internal/parser`, `internal/platform`, and `internal/testutil` are self-contained with zero project imports
+  - `internal/api` → `internal/{config,state,storage,detector,capture,version,logging}`
+  - `internal/api` → `internal/api/web` (embedded SPA only)
+- `internal/config`, `internal/shutdown`, `internal/version`, `internal/parser`, `internal/platform`, `internal/api/web`, and `internal/testutil` are self-contained with zero project imports
 - No `internal/` package imports `cmd/`
 - All future Phase packages (`analytics/`, etc.) follow the same rule: reside in `internal/` and are consumed by `cmd/tobimaru`
 

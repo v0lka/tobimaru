@@ -155,6 +155,7 @@ linters:
           - forcetypeassert
           - perfsprint
           - dupword
+          - musttag
 
       - path: internal/parser/
         linters:
@@ -167,6 +168,11 @@ linters:
 
       - path: internal/version/
         text: "avoid package names that conflict"
+        linters:
+          - revive
+
+      - path: internal/api/
+        text: "avoid meaningless package names"
         linters:
           - revive
 

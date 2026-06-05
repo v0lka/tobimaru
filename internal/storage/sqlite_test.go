@@ -397,3 +397,72 @@ func TestListWhitelist_InvalidMAC(t *testing.T) {
 		t.Fatal("expected error for invalid MAC, got nil")
 	}
 }
+
+// TestSessionsCRUD covers create / get / delete / prune for the v2 sessions
+// table introduced in Phase 4.
+func TestSessionsCRUD(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Second)
+	sess := &Session{
+		Token:     "test-token-abc",
+		Role:      SessionRoleAdmin,
+		CreatedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := repo.CreateSession(ctx, sess); err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	loaded, err := repo.GetSession(ctx, sess.Token)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if loaded.Role != SessionRoleAdmin {
+		t.Errorf("expected role admin, got %q", loaded.Role)
+	}
+	if !loaded.ExpiresAt.Equal(sess.ExpiresAt) {
+		t.Errorf("expires_at round-trip mismatch: got %v want %v", loaded.ExpiresAt, sess.ExpiresAt)
+	}
+
+	if _, err := repo.GetSession(ctx, "missing"); err == nil {
+		t.Error("expected ErrNotFound for missing token")
+	}
+
+	if err := repo.DeleteSession(ctx, sess.Token); err != nil {
+		t.Fatalf("DeleteSession failed: %v", err)
+	}
+	if _, err := repo.GetSession(ctx, sess.Token); err == nil {
+		t.Error("expected error after deletion")
+	}
+}
+
+func TestPruneExpiredSessions(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	active := &Session{Token: "active", Role: SessionRoleUser, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	expired := &Session{Token: "expired", Role: SessionRoleUser, CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour)}
+	if err := repo.CreateSession(ctx, active); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateSession(ctx, expired); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := repo.PruneExpiredSessions(ctx, now)
+	if err != nil {
+		t.Fatalf("PruneExpiredSessions failed: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("expected 1 expired session removed, got %d", removed)
+	}
+	if _, err := repo.GetSession(ctx, "active"); err != nil {
+		t.Errorf("active session should remain: %v", err)
+	}
+	if _, err := repo.GetSession(ctx, "expired"); err == nil {
+		t.Error("expired session should have been removed")
+	}
+}

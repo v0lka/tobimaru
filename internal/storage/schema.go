@@ -1,7 +1,7 @@
 package storage
 
 // schemaVersion tracks the current schema version for migrations.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // schemaSQL contains DDL statements for the initial schema creation.
 const schemaSQL = `
@@ -60,6 +60,29 @@ CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    role       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+`
+
+// migrationV2SQL adds the sessions table for API authentication. Idempotent
+// so it is safe to run on databases that have already been bootstrapped at
+// schemaVersion == 2 via schemaSQL.
+const migrationV2SQL = `
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    role       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 `
 
 // pragmasSQL contains performance and reliability pragmas applied at open.

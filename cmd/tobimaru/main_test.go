@@ -66,7 +66,7 @@ func TestConsumeAlerts(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		consumeAlerts(context.Background(), alerts, nil, 0)
+		consumeAlerts(context.Background(), alerts, nil, 0, nil)
 		close(done)
 	}()
 
@@ -113,7 +113,7 @@ func TestConsumeAlertsChannelClose(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		consumeAlerts(ctx, alerts, nil, 0)
+		consumeAlerts(ctx, alerts, nil, 0, nil)
 		close(done)
 	}()
 
@@ -232,7 +232,7 @@ func TestConsumeAlertsWithRepo(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		// Use maxEvents=2 so PruneEvents has visible effect.
-		consumeAlerts(context.Background(), alerts, repo, 2)
+		consumeAlerts(context.Background(), alerts, repo, 2, nil)
 		close(done)
 	}()
 

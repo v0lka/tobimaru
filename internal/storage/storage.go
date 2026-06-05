@@ -40,7 +40,34 @@ type Repository interface {
 	// Configuration key-value store
 	GetConfig(ctx context.Context, key string) (string, error)
 	SetConfig(ctx context.Context, key, value string) error
+
+	// Sessions (API authentication)
+	CreateSession(ctx context.Context, sess *Session) error
+	GetSession(ctx context.Context, token string) (*Session, error)
+	DeleteSession(ctx context.Context, token string) error
+	PruneExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 }
+
+// Session represents an authenticated API session token.
+type Session struct {
+	// Token is the opaque random session identifier (URL-safe base64).
+	Token string
+
+	// Role is either "admin" or "user".
+	Role string
+
+	// CreatedAt is the issuance time.
+	CreatedAt time.Time
+
+	// ExpiresAt is the absolute expiration time.
+	ExpiresAt time.Time
+}
+
+// Session role values used across storage and api packages.
+const (
+	SessionRoleAdmin = "admin"
+	SessionRoleUser  = "user"
+)
 
 // EventFilter defines criteria for querying security events.
 type EventFilter struct {

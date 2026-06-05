@@ -578,7 +578,7 @@ func TestNewEngineDefaultConfig(t *testing.T) {
 	if engine == nil {
 		t.Fatal("engine should not be nil")
 	}
-	if engine.dedupWindow <= 0 {
+	if engine.DedupWindow() <= 0 {
 		t.Error("dedupWindow should have default positive value")
 	}
 	if cap(engine.alerts) <= 0 {
@@ -632,8 +632,8 @@ func TestEngineZeroDedupWindow(t *testing.T) {
 		AlertBufferSize: 64,
 		DedupWindow:     0,
 	})
-	if engine.dedupWindow != config.DefaultDedupWindow {
-		t.Errorf("got default dedup window %v, want %v", engine.dedupWindow, config.DefaultDedupWindow)
+	if engine.DedupWindow() != config.DefaultDedupWindow {
+		t.Errorf("got default dedup window %v, want %v", engine.DedupWindow(), config.DefaultDedupWindow)
 	}
 }
 

@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/vkochetkov/tobimaru/internal/api"
 	"github.com/vkochetkov/tobimaru/internal/capture"
 	"github.com/vkochetkov/tobimaru/internal/config"
 	"github.com/vkochetkov/tobimaru/internal/detector"
@@ -34,10 +37,21 @@ const pruneEventInterval uint64 = 100
 func main() { //nolint:gocyclo // orchestrator with linear initialization sequence
 	flagConfig := flag.String("config", "configs/tobimaru.yaml", "path to configuration file")
 	flagVersion := flag.Bool("version", false, "print version and exit")
+	flagHashPassword := flag.String("hash-password", "", "print bcrypt hash for the given plaintext password and exit")
 	flag.Parse()
 
 	if *flagVersion {
 		fmt.Println(version.String())
+		return
+	}
+
+	if *flagHashPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(*flagHashPassword), bcrypt.DefaultCost)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to hash password: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(hash))
 		return
 	}
 
@@ -137,6 +151,14 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		slog.Warn("detection enabled but no rules registered; alerts will not be generated")
 	}
 
+	// Create the SSE hub when the API is enabled. The hub must exist before
+	// the alert consumer starts so that early events are not dropped on the
+	// floor.
+	var apiHub *api.Hub
+	if cfg.API.Enabled {
+		apiHub = api.NewHub(logger)
+	}
+
 	// Track consumer goroutines so shutdown waits for their final log lines.
 	var consumerWG sync.WaitGroup
 	bufSize := cfg.Monitor.Capture.FrameBufferSize
@@ -150,7 +172,7 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		})
 		engine.Run(signalCtx, detectorCh)
 		consumerWG.Go(func() {
-			consumeAlerts(signalCtx, engine.Alerts(), repo, cfg.Storage.MaxEvents)
+			consumeAlerts(signalCtx, engine.Alerts(), repo, cfg.Storage.MaxEvents, apiHub)
 		})
 		consumerWG.Go(func() {
 			consumeStateFrames(signalCtx, stateCh, stateEngine)
@@ -159,7 +181,7 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		// Detection only, no state engine.
 		engine.Run(signalCtx, pipeline.Frames())
 		consumerWG.Go(func() {
-			consumeAlerts(signalCtx, engine.Alerts(), repo, cfg.Storage.MaxEvents)
+			consumeAlerts(signalCtx, engine.Alerts(), repo, cfg.Storage.MaxEvents, apiHub)
 		})
 	} else if stateEngine != nil {
 		// State only, no detection.
@@ -201,6 +223,72 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 				}
 				slog.Info("auto-learning whitelist persisted", "entries", len(entries))
 			}
+		})
+	}
+
+	// Start the API server (REST + SSE + dashboard).
+	startTime := time.Now()
+	if cfg.API.Enabled && apiHub != nil {
+		apiSrv, err := api.NewServer(cfg.API, api.Deps{
+			Config:    cfg,
+			State:     stateEngine,
+			Repo:      repo,
+			Detector:  engine,
+			Pipeline:  pipeline,
+			Hub:       apiHub,
+			StartTime: startTime,
+			Logger:    logger,
+		})
+		if err != nil {
+			slog.Error("Failed to create API server", "error", err)
+			os.Exit(1)
+		}
+		consumerWG.Go(func() { apiHub.Run(signalCtx) })
+		consumerWG.Go(func() {
+			if err := apiSrv.Run(signalCtx); err != nil {
+				slog.Error("api server exited with error", "error", err)
+			}
+		})
+		// Periodically publish state/status to SSE subscribers.
+		consumerWG.Go(func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-signalCtx.Done():
+					return
+				case <-ticker.C:
+					if !apiHub.HasSubscribers() {
+						continue
+					}
+					if stateEngine != nil {
+						apiHub.Publish(api.Message{Type: api.MessageTypeAP, Data: stateEngine.APs().All()})
+						apiHub.Publish(api.Message{Type: api.MessageTypeClient, Data: stateEngine.Clients().All()})
+					}
+					st := map[string]any{
+						"uptime_seconds":  int64(time.Since(startTime).Seconds()),
+						"current_channel": 0,
+					}
+					if pipeline != nil {
+						st["current_channel"] = pipeline.CurrentChannel()
+					}
+					if stateEngine != nil {
+						st["stats"] = map[string]int{
+							"aps":     stateEngine.APs().Len(),
+							"clients": stateEngine.Clients().Len(),
+						}
+					}
+					st["subscribers"] = map[string]int{
+						"sse": apiHub.SubscriberCount(),
+					}
+					apiHub.Publish(api.NewStatusMessage(st))
+				}
+			}
+		})
+		sm.Register("api_stop", func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), cfg.API.ShutdownTimeout)
+			defer cancel()
+			return apiSrv.Shutdown(ctx)
 		})
 	}
 
@@ -347,8 +435,9 @@ func consumeFrames(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 // consumeAlerts receives security events from the detection engine and logs
 // them at appropriate levels based on severity. If a repository is provided,
 // events are also persisted to storage and the events table is periodically
-// pruned to maxEvents (when > 0).
-func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent, repo storage.Repository, maxEvents int) {
+// pruned to maxEvents (when > 0). When a non-nil SSE hub is supplied, every
+// alert is also broadcast to subscribed dashboard clients.
+func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent, repo storage.Repository, maxEvents int, hub *api.Hub) { //nolint:gocyclo // logging + storage + hub fan-out is linear, not branching
 	var count uint64
 
 	for {
@@ -384,6 +473,11 @@ func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent, r
 				slog.Warn("security alert", args...)
 			default:
 				slog.Info("security alert", args...)
+			}
+
+			// Broadcast to dashboard subscribers if the API hub is available.
+			if hub != nil {
+				hub.Publish(api.NewEventMessage(event))
 			}
 
 			// Persist to storage if available.

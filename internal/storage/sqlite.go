@@ -117,6 +117,11 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		// blocks (e.g., `if version < 2 { ... }; if version < 3 { ... }`) so
 		// that databases at any historical version can be upgraded
 		// step-by-step. Never drop-and-recreate tables.
+		if version < 2 {
+			if _, err := db.ExecContext(ctx, migrationV2SQL); err != nil {
+				return fmt.Errorf("failed to apply v2 migration: %w", err)
+			}
+		}
 		if _, err := db.ExecContext(ctx, "UPDATE schema_version SET version = ?", schemaVersion); err != nil {
 			return fmt.Errorf("failed to update schema version: %w", err)
 		}
@@ -409,6 +414,71 @@ func (r *SQLiteRepository) GetConfig(ctx context.Context, key string) (string, e
 func (r *SQLiteRepository) SetConfig(ctx context.Context, key, value string) error {
 	_, err := r.db.ExecContext(ctx, `INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`, key, value)
 	return err
+}
+
+// --- Sessions ---
+
+// CreateSession inserts a new session row.
+func (r *SQLiteRepository) CreateSession(ctx context.Context, sess *Session) error {
+	if sess == nil || sess.Token == "" {
+		return errors.New("storage: session token is required")
+	}
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO sessions (token, role, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+		sess.Token,
+		sess.Role,
+		sess.CreatedAt.UTC().Format(time.RFC3339Nano),
+		sess.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	)
+	return err
+}
+
+// GetSession looks up a session by its token. Returns ErrNotFound when the
+// token does not exist. The caller is responsible for checking ExpiresAt.
+func (r *SQLiteRepository) GetSession(ctx context.Context, token string) (*Session, error) {
+	var role, createdStr, expiresStr string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT role, created_at, expires_at FROM sessions WHERE token = ?`,
+		token,
+	).Scan(&role, &createdStr, &expiresStr)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	created, err := time.Parse(time.RFC3339Nano, createdStr)
+	if err != nil {
+		return nil, fmt.Errorf("storage: invalid session created_at %q: %w", createdStr, err)
+	}
+	expires, err := time.Parse(time.RFC3339Nano, expiresStr)
+	if err != nil {
+		return nil, fmt.Errorf("storage: invalid session expires_at %q: %w", expiresStr, err)
+	}
+	return &Session{
+		Token:     token,
+		Role:      role,
+		CreatedAt: created,
+		ExpiresAt: expires,
+	}, nil
+}
+
+// DeleteSession removes a session row.
+func (r *SQLiteRepository) DeleteSession(ctx context.Context, token string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
+	return err
+}
+
+// PruneExpiredSessions removes sessions whose expires_at is before now.
+func (r *SQLiteRepository) PruneExpiredSessions(ctx context.Context, now time.Time) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM sessions WHERE expires_at < ?`,
+		now.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // --- Helpers ---

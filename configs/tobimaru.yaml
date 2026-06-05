@@ -69,3 +69,23 @@ storage:
   snapshot_interval: 5m           # how often to persist AP/client state (0 → use built-in default)
   max_snapshots: 288              # keep ~24h of snapshots at 5m intervals (0 → use built-in default)
   max_events: 100000              # max security events to retain (pruned every 100 inserts; 0 → use built-in default)
+
+api:
+  # HTTP API + embedded React dashboard. Disabled by default.
+  # When enabled together with auth, the SPA is served on listen and the API
+  # is mounted under /api/. Sessions are persisted in the SQLite database, so
+  # storage.enabled MUST be true when api.auth.enabled is true.
+  enabled: false
+  listen: "127.0.0.1:8080"        # bind loopback by default; use a reverse proxy for remote access
+  read_timeout: 15s
+  write_timeout: 30s              # SSE connections override this per-request
+  idle_timeout: 60s
+  shutdown_timeout: 5s
+  cors:
+    allowed_origins: []           # empty = same-origin only
+  auth:
+    enabled: true                 # set false for local development only
+    session_ttl: 24h
+    # Generate hashes with: tobimaru -hash-password <plaintext>
+    admin_password_hash: ""       # bcrypt hash; required when auth.enabled is true
+    user_password_hash: ""        # optional read-only account; empty disables it
