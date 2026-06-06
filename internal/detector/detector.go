@@ -35,7 +35,8 @@ type Engine struct {
 	rules       []Rule                 // registered rules (immutable after Run)
 	alerts      chan *SecurityEvent    // buffered output channel
 	detCfg      config.DetectionConfig // full detection configuration
-	dedupWindow time.Duration          // deduplication time window
+	dedupWindow atomic.Int64           // deduplication time window (nanoseconds)
+	enabled     atomic.Bool            // runtime toggle; when false, emit is a no-op
 	dedup       map[string]time.Time   // dedup cache (key → last emission time)
 	mu          sync.Mutex             // guards dedup map
 	started     atomic.Bool            // set true on first Run; rejects late Register
@@ -52,13 +53,36 @@ func NewEngine(cfg config.DetectionConfig) *Engine {
 	if dedupWindow <= 0 {
 		dedupWindow = config.DefaultDedupWindow
 	}
-	return &Engine{
-		alerts:      make(chan *SecurityEvent, bufSize),
-		detCfg:      cfg,
-		dedupWindow: dedupWindow,
-		dedup:       make(map[string]time.Time),
+	e := &Engine{
+		alerts: make(chan *SecurityEvent, bufSize),
+		detCfg: cfg,
+		dedup:  make(map[string]time.Time),
 	}
+	e.dedupWindow.Store(int64(dedupWindow))
+	e.enabled.Store(cfg.Enabled)
+	return e
 }
+
+// DedupWindow returns the current deduplication window.
+func (e *Engine) DedupWindow() time.Duration {
+	return time.Duration(e.dedupWindow.Load())
+}
+
+// SetDedupWindow atomically updates the deduplication window. Values <= 0 are
+// ignored. The new window takes effect on the next dedup decision.
+func (e *Engine) SetDedupWindow(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	e.dedupWindow.Store(int64(d))
+}
+
+// SetEnabled atomically sets the enabled flag. When disabled, the engine
+// still runs (processes frames for rule state) but suppresses event emission.
+func (e *Engine) SetEnabled(v bool) { e.enabled.Store(v) }
+
+// Enabled reports the current enabled state.
+func (e *Engine) Enabled() bool { return e.enabled.Load() }
 
 // Register adds a detection rule to the engine. The rule's Init method is
 // called with the engine's configuration. Registration fails if a rule with
@@ -96,7 +120,7 @@ func (e *Engine) Run(ctx context.Context, frames <-chan *parser.ParsedFrame) {
 		return
 	}
 
-	sweepInterval := max(e.dedupWindow, time.Second)
+	sweepInterval := max(e.DedupWindow(), time.Second)
 	ticker := time.NewTicker(sweepInterval)
 
 	go func() {
@@ -174,11 +198,15 @@ func (e *Engine) emit(event *SecurityEvent) {
 	if event == nil {
 		return
 	}
+	if !e.enabled.Load() {
+		return
+	}
 
 	key := dedupKey(event)
+	window := e.DedupWindow()
 	e.mu.Lock()
 	lastSeen, exists := e.dedup[key]
-	if exists && time.Since(lastSeen) < e.dedupWindow {
+	if exists && time.Since(lastSeen) < window {
 		e.mu.Unlock()
 		return // suppressed
 	}
@@ -224,7 +252,7 @@ func (e *Engine) sweepDedup() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	cutoff := time.Now().Add(-2 * e.dedupWindow)
+	cutoff := time.Now().Add(-2 * e.DedupWindow())
 	for key, lastSeen := range e.dedup {
 		if lastSeen.Before(cutoff) {
 			delete(e.dedup, key)

@@ -32,6 +32,8 @@ specs/
 │   ├── build-and-versioning.md     ldflags, Makefile, CI pipeline
 │   ├── capture.md                  pcap capture, monitor mode, channel hopping, pipeline
 │   ├── detection.md                detection engine, rule interface, security events
+│   ├── state.md                    network state engine, AP/client maps, whitelist
+│   ├── storage.md                  SQLite persistence, repository pattern
 │   └── parser.md                   802.11 frame parsing and classification
 │
 ├── contracts/                      interfaces between layers
@@ -42,7 +44,8 @@ specs/
     ├── _template.md
     ├── 001-yaml-config.md
     ├── 002-ldflags-version.md
-    └── 003-slog-logging.md
+    ├── 003-slog-logging.md
+    └── 004-sqlite-pure-go.md
 ```
 
 ## Naming Conventions

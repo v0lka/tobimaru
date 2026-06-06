@@ -40,7 +40,52 @@ monitor:
     include_5ghz: false
 
 detection:
-  enabled: true                   # master switch for detection engine
+  enabled: false                  # master switch for detection engine (no rules implemented yet)
   dedup_window: 30s               # suppress duplicate alerts within this window
   alert_buffer_size: 256          # buffered alerts channel capacity
   # Rule-specific configs will be added in tasks 2.3–2.7
+
+state:
+  # Network state tracking maintains an in-memory map of observed APs and
+  # clients. Required for auto-learning, snapshots, and stateful detection.
+  # Increases memory and CPU footprint vs. raw capture.
+  enabled: true                   # master switch for network state tracking
+  ttl: 10m                        # remove APs/clients not seen for this duration (0 → use built-in default)
+  sweep_interval: 1m              # how often to check for stale entries (0 → use built-in default)
+
+whitelist:
+  auto_learning:
+    # When enabled, every device observed during "duration" is added to the
+    # in-memory whitelist (and persisted if storage.enabled).
+    enabled: false                # activate learning mode at startup
+    duration: 15m                 # learning phase duration (0 → use built-in default)
+
+storage:
+  # Persistent storage uses a pure-Go SQLite database (ADR 004). When
+  # enabled, the file is created (or chmod-ed) with mode 0600 to keep
+  # captured security events and snapshots out of reach of other users.
+  enabled: false                  # master switch for SQLite persistence
+  path: "tobimaru.db"             # SQLite database file path (created with 0600 perms)
+  snapshot_interval: 5m           # how often to persist AP/client state (0 → use built-in default)
+  max_snapshots: 288              # keep ~24h of snapshots at 5m intervals (0 → use built-in default)
+  max_events: 100000              # max security events to retain (pruned every 100 inserts; 0 → use built-in default)
+
+api:
+  # HTTP API + embedded React dashboard. Disabled by default.
+  # When enabled together with auth, the SPA is served on listen and the API
+  # is mounted under /api/. Sessions are persisted in the SQLite database, so
+  # storage.enabled MUST be true when api.auth.enabled is true.
+  enabled: false
+  listen: "127.0.0.1:8080"        # bind loopback by default; use a reverse proxy for remote access
+  read_timeout: 15s
+  write_timeout: 30s              # SSE connections override this per-request
+  idle_timeout: 60s
+  shutdown_timeout: 5s
+  cors:
+    allowed_origins: []           # empty = same-origin only
+  auth:
+    enabled: true                 # set false for local development only
+    session_ttl: 24h
+    # Generate hashes with: tobimaru -hash-password <plaintext>
+    admin_password_hash: ""       # bcrypt hash; required when auth.enabled is true
+    user_password_hash: ""        # optional read-only account; empty disables it
