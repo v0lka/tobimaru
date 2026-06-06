@@ -26,6 +26,62 @@ type Config struct {
 	Log       LogConfig       `yaml:"log"`
 	Monitor   MonitorConfig   `yaml:"monitor"`
 	Detection DetectionConfig `yaml:"detection"`
+	State     StateConfig     `yaml:"state"`
+	Whitelist WhitelistConfig `yaml:"whitelist"`
+	Storage   StorageConfig   `yaml:"storage"`
+	API       APIConfig       `yaml:"api"`
+}
+
+// APIConfig holds HTTP API server configuration.
+type APIConfig struct {
+	// Enabled is the master switch for the HTTP API server and dashboard.
+	Enabled bool `yaml:"enabled"`
+
+	// Listen is the bind address (host:port). Defaults to 127.0.0.1:8080.
+	Listen string `yaml:"listen"`
+
+	// ReadTimeout is the maximum duration for reading the entire request.
+	ReadTimeout time.Duration `yaml:"read_timeout"`
+
+	// WriteTimeout is the maximum duration before writing the response times out.
+	// Note: SSE connections disable this per-request via http.ResponseController.
+	WriteTimeout time.Duration `yaml:"write_timeout"`
+
+	// IdleTimeout is the maximum duration to keep idle keep-alive connections.
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+
+	// ShutdownTimeout caps the graceful HTTP shutdown duration.
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+
+	// CORS holds cross-origin resource sharing settings.
+	CORS CORSConfig `yaml:"cors"`
+
+	// Auth holds authentication configuration for the API and dashboard.
+	Auth AuthConfig `yaml:"auth"`
+}
+
+// CORSConfig holds CORS settings for the API.
+type CORSConfig struct {
+	// AllowedOrigins is the list of allowed origins; empty = same-origin only.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
+// AuthConfig holds authentication configuration.
+type AuthConfig struct {
+	// Enabled toggles authentication. When false, every request is treated as
+	// an authenticated admin (useful for local development).
+	Enabled bool `yaml:"enabled"`
+
+	// SessionTTL is how long an issued session token remains valid.
+	SessionTTL time.Duration `yaml:"session_ttl"`
+
+	// AdminPasswordHash is the bcrypt hash of the admin password. Required
+	// when Auth.Enabled is true.
+	AdminPasswordHash string `yaml:"admin_password_hash"`
+
+	// UserPasswordHash is the bcrypt hash of the user (read-only) password.
+	// Optional; when empty the "user" account is disabled.
+	UserPasswordHash string `yaml:"user_password_hash"`
 }
 
 // DetectionConfig holds intrusion detection configuration.
@@ -39,6 +95,50 @@ type DetectionConfig struct {
 
 	// AlertBufferSize is the capacity of the buffered alerts channel.
 	AlertBufferSize int `yaml:"alert_buffer_size"`
+}
+
+// StateConfig holds network state engine configuration.
+type StateConfig struct {
+	// Enabled is the master switch for the state engine.
+	Enabled bool `yaml:"enabled"`
+
+	// TTL is the duration after which unobserved APs/clients are evicted.
+	TTL time.Duration `yaml:"ttl"`
+
+	// SweepInterval is how often the eviction sweep runs.
+	SweepInterval time.Duration `yaml:"sweep_interval"`
+}
+
+// WhitelistConfig holds whitelist/blacklist and auto-learning configuration.
+type WhitelistConfig struct {
+	AutoLearning AutoLearningConfig `yaml:"auto_learning"`
+}
+
+// AutoLearningConfig holds auto-learning mode settings.
+type AutoLearningConfig struct {
+	// Enabled activates auto-learning mode at startup.
+	Enabled bool `yaml:"enabled"`
+
+	// Duration is the length of the learning phase.
+	Duration time.Duration `yaml:"duration"`
+}
+
+// StorageConfig holds persistent storage configuration.
+type StorageConfig struct {
+	// Enabled is the master switch for SQLite storage.
+	Enabled bool `yaml:"enabled"`
+
+	// Path is the SQLite database file path.
+	Path string `yaml:"path"`
+
+	// SnapshotInterval is how often state snapshots are persisted.
+	SnapshotInterval time.Duration `yaml:"snapshot_interval"`
+
+	// MaxSnapshots is the maximum number of snapshots to retain.
+	MaxSnapshots int `yaml:"max_snapshots"`
+
+	// MaxEvents is the maximum number of security events to retain.
+	MaxEvents int `yaml:"max_events"`
 }
 
 // Log level string constants used in configuration.
@@ -69,6 +169,27 @@ const (
 	DefaultDedupWindow     = 30 * time.Second
 	DefaultAlertBufferSize = 256
 	DefaultFrameBufferSize = 1024
+
+	// State engine defaults.
+	DefaultStateTTL           = 10 * time.Minute
+	DefaultStateSweepInterval = 1 * time.Minute
+
+	// Auto-learning defaults.
+	DefaultAutoLearningDuration = 15 * time.Minute
+
+	// Storage defaults.
+	DefaultStoragePath      = "tobimaru.db"
+	DefaultSnapshotInterval = 5 * time.Minute
+	DefaultMaxSnapshots     = 288 // 24 hours at 5-minute intervals
+	DefaultMaxEvents        = 100000
+
+	// API server defaults.
+	DefaultAPIListen          = "127.0.0.1:8080"
+	DefaultAPIReadTimeout     = 15 * time.Second
+	DefaultAPIWriteTimeout    = 30 * time.Second
+	DefaultAPIIdleTimeout     = 60 * time.Second
+	DefaultAPIShutdownTimeout = 5 * time.Second
+	DefaultAPISessionTTL      = 24 * time.Hour
 )
 
 // LogConfig holds logging-related configuration.
@@ -117,6 +238,12 @@ type ValidationError struct {
 
 func (e *ValidationError) Error() string {
 	return fmt.Sprintf("configuration validation failed: %v", errors.Join(e.Errors...))
+}
+
+// Unwrap returns the list of underlying validation errors so that callers
+// can use errors.Is / errors.As against individual sentinel errors.
+func (e *ValidationError) Unwrap() []error {
+	return e.Errors
 }
 
 // Load reads a YAML configuration file from the given path, applies defaults,

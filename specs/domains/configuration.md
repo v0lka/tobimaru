@@ -19,6 +19,10 @@ type Config struct {
     Log       LogConfig       `yaml:"log"`
     Monitor   MonitorConfig   `yaml:"monitor"`
     Detection DetectionConfig `yaml:"detection"`
+    State     StateConfig     `yaml:"state"`
+    Whitelist WhitelistConfig `yaml:"whitelist"`
+    Storage   StorageConfig   `yaml:"storage"`
+    API       APIConfig       `yaml:"api"`
 }
 
 type LogConfig struct {
@@ -54,6 +58,28 @@ type WeightedDwellConfig struct {
     PrimaryChannels []int   `yaml:"primary_channels"` // channels to spend more time on
     Multiplier      float64 `yaml:"multiplier"`       // time multiplier for primary channels
 }
+
+type APIConfig struct {
+    Enabled         bool          `yaml:"enabled"`          // master switch for HTTP API
+    Listen          string        `yaml:"listen"`           // bind address (host:port)
+    ReadTimeout     time.Duration `yaml:"read_timeout"`     // max duration for reading request
+    WriteTimeout    time.Duration `yaml:"write_timeout"`    // max duration for writing response
+    IdleTimeout     time.Duration `yaml:"idle_timeout"`     // keep-alive idle timeout
+    ShutdownTimeout time.Duration `yaml:"shutdown_timeout"` // graceful shutdown timeout
+    CORS            CORSConfig    `yaml:"cors"`             // CORS settings
+    Auth            AuthConfig    `yaml:"auth"`             // authentication configuration
+}
+
+type CORSConfig struct {
+    AllowedOrigins []string `yaml:"allowed_origins"` // allowed origins; empty = same-origin
+}
+
+type AuthConfig struct {
+    Enabled           bool          `yaml:"enabled"`             // toggle authentication
+    SessionTTL        time.Duration `yaml:"session_ttl"`         // session token lifetime
+    AdminPasswordHash string        `yaml:"admin_password_hash"` // bcrypt hash of admin password
+    UserPasswordHash  string        `yaml:"user_password_hash"`  // bcrypt hash of user password (optional)
+}
 ```
 
 **Validation errors:**
@@ -65,6 +91,11 @@ var (
     ErrInvalidSnaplen    = errors.New("monitor.capture.snaplen must be positive")
     ErrInvalidBufferSize = errors.New("monitor.capture.buffer_size must be positive")
     ErrInvalidTimeout    = errors.New("monitor.capture.timeout must be positive")
+    ErrInvalidStateTTL         = errors.New("state.ttl must be positive when state is enabled")
+    ErrInvalidSweepInterval    = errors.New("state.sweep_interval must be positive when state is enabled")
+    ErrInvalidStoragePath      = errors.New("storage.path is required when storage is enabled")
+    ErrInvalidSnapshotInterval = errors.New("storage.snapshot_interval must be positive when storage is enabled")
+    ErrInvalidLearningDuration = errors.New("whitelist.auto_learning.duration must be positive when enabled")
 )
 
 type ValidationError struct {
@@ -87,6 +118,13 @@ const (
     DefaultMultiplier      = 2.5
     DefaultDedupWindow     = 30 * time.Second
     DefaultAlertBufferSize = 256
+    DefaultStateTTL           = 10 * time.Minute
+    DefaultStateSweepInterval = 1 * time.Minute
+    DefaultAutoLearningDuration = 15 * time.Minute
+    DefaultStoragePath         = "tobimaru.db"
+    DefaultSnapshotInterval    = 5 * time.Minute
+    DefaultMaxSnapshots        = 288
+    DefaultMaxEvents           = 100000
 )
 ```
 
@@ -117,7 +155,14 @@ config.Load(path)
   │     │     ├─ monitor.channel_hopping.channels_5ghz → DefaultChannels5GHz() (if nil)
   │     │     ├─ monitor.channel_hopping.weighted_dwell.multiplier → DefaultMultiplier (if 0)
 │     │     ├─ detection.dedup_window    → DefaultDedupWindow     (if 0)
-│     │     └─ detection.alert_buffer_size → DefaultAlertBufferSize (if 0)
+│     │     ├─ detection.alert_buffer_size → DefaultAlertBufferSize (if 0)
+│     │     ├─ state.ttl                  → DefaultStateTTL           (if 0)
+│     │     ├─ state.sweep_interval       → DefaultStateSweepInterval (if 0)
+│     │     ├─ whitelist.auto_learning.duration → DefaultAutoLearningDuration (if 0)
+│     │     ├─ storage.path               → DefaultStoragePath        (if empty)
+│     │     ├─ storage.snapshot_interval  → DefaultSnapshotInterval   (if 0)
+│     │     ├─ storage.max_snapshots      → DefaultMaxSnapshots       (if 0)
+│     │     └─ storage.max_events         → DefaultMaxEvents          (if 0)
   │     │
   │     └─► validate(&cfg)
   │           ├─ monitor.interface must be non-empty
@@ -125,7 +170,12 @@ config.Load(path)
   │           ├─ log.format must be in {text, json}
   │           ├─ monitor.capture.snaplen must be > 0
   │           ├─ monitor.capture.buffer_size must be > 0
-  │           └─ monitor.capture.timeout must be > 0
+  │           ├─ monitor.capture.timeout must be > 0
+  │           ├─ state.ttl must be > 0                       (only when state.enabled)
+  │           ├─ state.sweep_interval must be > 0            (only when state.enabled)
+  │           ├─ storage.path must be non-empty              (only when storage.enabled)
+  │           ├─ storage.snapshot_interval must be > 0       (only when storage.enabled)
+  │           └─ whitelist.auto_learning.duration must be > 0 (only when auto_learning.enabled)
   │           └─ On failure: return *ValidationError
   │
   └─► Return *Config, nil
@@ -141,6 +191,7 @@ config.Load(path)
 - `monitor.interface` is the only required field (checked as non-empty)
 - `IsValidationError(err)` returns `true` for `*ValidationError` via `errors.As`
 - Defaults are applied only when the corresponding field is the Go zero value (0 for ints and durations, nil for slices, empty string for strings)
+- Because `applyDefaults` runs before `validate`, an explicit `0` (or empty string) for a field that has a default is silently replaced with the default. The "must be positive" validation errors therefore only fire on explicitly negative values that survive defaulting.
 
 ## Configuration
 
@@ -165,6 +216,27 @@ config.Load(path)
 | `detection.enabled` | `DetectionConfig.Enabled` | `bool` | `false` | No |
 | `detection.dedup_window` | `DetectionConfig.DedupWindow` | `time.Duration` | `30s` | No |
 | `detection.alert_buffer_size` | `DetectionConfig.AlertBufferSize` | `int` | `256` | No |
+| `state.enabled` | `StateConfig.Enabled` | `bool` | `false` | No |
+| `state.ttl` | `StateConfig.TTL` | `time.Duration` | `10m` | No |
+| `state.sweep_interval` | `StateConfig.SweepInterval` | `time.Duration` | `1m` | No |
+| `whitelist.auto_learning.enabled` | `AutoLearningConfig.Enabled` | `bool` | `false` | No |
+| `whitelist.auto_learning.duration` | `AutoLearningConfig.Duration` | `time.Duration` | `15m` | No |
+| `storage.enabled` | `StorageConfig.Enabled` | `bool` | `false` | No |
+| `storage.path` | `StorageConfig.Path` | `string` | `"tobimaru.db"` | No |
+| `storage.snapshot_interval` | `StorageConfig.SnapshotInterval` | `time.Duration` | `5m` | No |
+| `storage.max_snapshots` | `StorageConfig.MaxSnapshots` | `int` | `288` | No |
+| `storage.max_events` | `StorageConfig.MaxEvents` | `int` | `100000` | No |
+| `api.enabled` | `APIConfig.Enabled` | `bool` | `false` | No |
+| `api.listen` | `APIConfig.Listen` | `string` | `"127.0.0.1:8080"` | No |
+| `api.read_timeout` | `APIConfig.ReadTimeout` | `time.Duration` | `15s` | No |
+| `api.write_timeout` | `APIConfig.WriteTimeout` | `time.Duration` | `30s` | No |
+| `api.idle_timeout` | `APIConfig.IdleTimeout` | `time.Duration` | `60s` | No |
+| `api.shutdown_timeout` | `APIConfig.ShutdownTimeout` | `time.Duration` | `5s` | No |
+| `api.cors.allowed_origins` | `CORSConfig.AllowedOrigins` | `[]string` | `[]` (same-origin) | No |
+| `api.auth.enabled` | `AuthConfig.Enabled` | `bool` | `true` | No |
+| `api.auth.session_ttl` | `AuthConfig.SessionTTL` | `time.Duration` | `24h` | No |
+| `api.auth.admin_password_hash` | `AuthConfig.AdminPasswordHash` | `string` | — | When auth enabled |
+| `api.auth.user_password_hash` | `AuthConfig.UserPasswordHash` | `string` | `""` (disabled) | No |
 
 ## Extension Points
 
@@ -176,7 +248,9 @@ config.Load(path)
 
 - [Logging](logging.md) — consumes `LogConfig` to create `*slog.Logger`
 - [Capture Engine](capture.md) — consumes `CaptureConfig` and `ChannelHoppingConfig`
+- [Network State](state.md) — consumes `StateConfig` and `WhitelistConfig`
+- [Storage](storage.md) — consumes `StorageConfig`
 - [Contract: Config → Logging](../contracts/config-logging.md) — `LogConfig` type crossing the boundary
-- [Contract: Main ↔ Internal](../contracts/main-internal.md) — full `*config.Config` passed to `capture.NewPipeline()` and `detector.NewEngine()`
-- [Detection Engine](detection.md) — consumes `DetectionConfig` for engine parameters (dedup window, alert buffer)
+- [Contract: Main ↔ Internal](../contracts/main-internal.md) — full `*config.Config` passed to components
+- [Detection Engine](detection.md) — consumes `DetectionConfig` for engine parameters
 - [ADR-001: YAML Config with KnownFields](../decisions/001-yaml-config.md) — why YAML and strict parsing
