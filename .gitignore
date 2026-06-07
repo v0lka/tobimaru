@@ -48,7 +48,8 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
+.qoder/
 
 # SPA / Node — keep `internal/api/web/dist/` (committed bundle), but ignore
 # Node's local artefacts that should never enter version control.
