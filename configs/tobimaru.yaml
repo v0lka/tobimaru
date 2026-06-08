@@ -44,3 +44,33 @@ detection:
   dedup_window: 30s               # suppress duplicate alerts within this window
   alert_buffer_size: 256          # buffered alerts channel capacity
   # Rule-specific configs will be added in tasks 2.3–2.7
+  deauth_flood:
+    enabled: true
+    threshold: 10
+    window: 10s
+
+  disassoc_flood:
+    enabled: true
+    threshold: 10
+    window: 10s
+
+  beacon_flood:
+    enabled: true
+    threshold: 50
+    window: 10s
+    learning_period: 60s
+
+  evil_twin:
+    enabled: true
+    score_threshold: 80
+    stale_timeout: 5m
+    learning_period: 60s
+    min_beacons: 3
+
+  unauthorized_device:
+    enabled: false
+    protected_bssids: []
+    protected_ssids: []
+    whitelist: []
+    alert_on_probe: false
+    cooldown: 5m

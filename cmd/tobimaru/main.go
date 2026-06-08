@@ -76,8 +76,7 @@ func main() {
 		"dedup_window", cfg.Detection.DedupWindow,
 	)
 
-	// TODO(phase-2.3): register attack-detection rules here
-	// (deauth flood, disassoc flood, evil twin, ...).
+	registerDetectionRules(engine, cfg.Detection)
 
 	if cfg.Detection.Enabled && engine.RuleCount() == 0 {
 		slog.Warn("detection enabled but no rules registered; alerts will not be generated")
@@ -206,5 +205,36 @@ func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent) {
 				slog.Info("security alert", args...)
 			}
 		}
+	}
+}
+
+func registerDetectionRules(engine *detector.Engine, cfg config.DetectionConfig) {
+	register := func(rule detector.Rule) {
+		if err := engine.Register(rule); err != nil {
+			slog.Error("failed to register detection rule",
+				"rule", rule.Name(),
+				"error", err,
+			)
+		}
+	}
+
+	if cfg.DeauthFlood.Enabled {
+		register(&detector.DeauthFloodRule{})
+	}
+
+	if cfg.DisassocFlood.Enabled {
+		register(&detector.DisassocFloodRule{})
+	}
+
+	if cfg.BeaconFlood.Enabled {
+		register(&detector.BeaconFloodRule{})
+	}
+
+	if cfg.EvilTwin.Enabled {
+		register(&detector.EvilTwinRule{})
+	}
+
+	if cfg.UnauthorizedDevice.Enabled {
+		register(&detector.UnauthorizedDeviceRule{})
 	}
 }

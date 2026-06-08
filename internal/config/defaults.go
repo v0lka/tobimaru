@@ -61,4 +61,44 @@ func applyDefaults(cfg *Config) {
 	if cfg.Detection.AlertBufferSize == 0 {
 		cfg.Detection.AlertBufferSize = DefaultAlertBufferSize
 	}
+	if cfg.Detection.DeauthFlood.Threshold == 0 {
+		cfg.Detection.DeauthFlood.Threshold = DefaultDeauthFloodThreshold
+	}
+	if cfg.Detection.DeauthFlood.Window == 0 {
+		cfg.Detection.DeauthFlood.Window = DefaultDeauthFloodWindow
+	}
+
+	if cfg.Detection.DisassocFlood.Threshold == 0 {
+		cfg.Detection.DisassocFlood.Threshold = DefaultDisassocFloodThreshold
+	}
+	if cfg.Detection.DisassocFlood.Window == 0 {
+		cfg.Detection.DisassocFlood.Window = DefaultDisassocFloodWindow
+	}
+
+	if cfg.Detection.BeaconFlood.Threshold == 0 {
+		cfg.Detection.BeaconFlood.Threshold = DefaultBeaconFloodThreshold
+	}
+	if cfg.Detection.BeaconFlood.Window == 0 {
+		cfg.Detection.BeaconFlood.Window = DefaultBeaconFloodWindow
+	}
+	if cfg.Detection.BeaconFlood.LearningPeriod == 0 {
+		cfg.Detection.BeaconFlood.LearningPeriod = DefaultBeaconFloodLearningPeriod
+	}
+
+	if cfg.Detection.EvilTwin.ScoreThreshold == 0 {
+		cfg.Detection.EvilTwin.ScoreThreshold = DefaultEvilTwinScoreThreshold
+	}
+	if cfg.Detection.EvilTwin.StaleTimeout == 0 {
+		cfg.Detection.EvilTwin.StaleTimeout = DefaultEvilTwinStaleTimeout
+	}
+	if cfg.Detection.EvilTwin.LearningPeriod == 0 {
+		cfg.Detection.EvilTwin.LearningPeriod = DefaultEvilTwinLearningPeriod
+	}
+	if cfg.Detection.EvilTwin.MinBeacons == 0 {
+		cfg.Detection.EvilTwin.MinBeacons = DefaultEvilTwinMinBeacons
+	}
+
+	if cfg.Detection.UnauthorizedDevice.Cooldown == 0 {
+		cfg.Detection.UnauthorizedDevice.Cooldown = DefaultUnauthorizedDeviceCooldown
+	}
 }

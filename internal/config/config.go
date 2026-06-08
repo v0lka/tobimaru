@@ -39,6 +39,47 @@ type DetectionConfig struct {
 
 	// AlertBufferSize is the capacity of the buffered alerts channel.
 	AlertBufferSize int `yaml:"alert_buffer_size"`
+
+	DeauthFlood        DeauthFloodConfig        `yaml:"deauth_flood"`
+	DisassocFlood      DisassocFloodConfig      `yaml:"disassoc_flood"`
+	BeaconFlood        BeaconFloodConfig        `yaml:"beacon_flood"`
+	EvilTwin           EvilTwinConfig           `yaml:"evil_twin"`
+	UnauthorizedDevice UnauthorizedDeviceConfig `yaml:"unauthorized_device"`
+}
+type DeauthFloodConfig struct {
+	Enabled   bool          `yaml:"enabled"`
+	Threshold int           `yaml:"threshold"`
+	Window    time.Duration `yaml:"window"`
+}
+
+type DisassocFloodConfig struct {
+	Enabled   bool          `yaml:"enabled"`
+	Threshold int           `yaml:"threshold"`
+	Window    time.Duration `yaml:"window"`
+}
+
+type BeaconFloodConfig struct {
+	Enabled        bool          `yaml:"enabled"`
+	Threshold      int           `yaml:"threshold"`
+	Window         time.Duration `yaml:"window"`
+	LearningPeriod time.Duration `yaml:"learning_period"`
+}
+
+type EvilTwinConfig struct {
+	Enabled        bool          `yaml:"enabled"`
+	ScoreThreshold int           `yaml:"score_threshold"`
+	StaleTimeout   time.Duration `yaml:"stale_timeout"`
+	LearningPeriod time.Duration `yaml:"learning_period"`
+	MinBeacons     int           `yaml:"min_beacons"`
+}
+
+type UnauthorizedDeviceConfig struct {
+	Enabled         bool          `yaml:"enabled"`
+	ProtectedBSSIDs []string      `yaml:"protected_bssids"`
+	ProtectedSSIDs  []string      `yaml:"protected_ssids"`
+	Whitelist       []string      `yaml:"whitelist"`
+	AlertOnProbe    bool          `yaml:"alert_on_probe"`
+	Cooldown        time.Duration `yaml:"cooldown"`
 }
 
 // Log level string constants used in configuration.
@@ -69,6 +110,23 @@ const (
 	DefaultDedupWindow     = 30 * time.Second
 	DefaultAlertBufferSize = 256
 	DefaultFrameBufferSize = 1024
+
+	DefaultDeauthFloodThreshold = 10
+	DefaultDeauthFloodWindow    = 10 * time.Second
+
+	DefaultDisassocFloodThreshold = 10
+	DefaultDisassocFloodWindow    = 10 * time.Second
+
+	DefaultBeaconFloodThreshold      = 50
+	DefaultBeaconFloodWindow         = 10 * time.Second
+	DefaultBeaconFloodLearningPeriod = 60 * time.Second
+
+	DefaultEvilTwinScoreThreshold = 80
+	DefaultEvilTwinStaleTimeout   = 5 * time.Minute
+	DefaultEvilTwinLearningPeriod = 60 * time.Second
+	DefaultEvilTwinMinBeacons     = 3
+
+	DefaultUnauthorizedDeviceCooldown = 5 * time.Minute
 )
 
 // LogConfig holds logging-related configuration.
