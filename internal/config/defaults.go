@@ -20,7 +20,6 @@ func DefaultChannels5GHz() []int {
 	}
 }
 
-
 func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value checks, not branching complexity
 	// Log defaults.
 	if cfg.Log.Level == "" {
