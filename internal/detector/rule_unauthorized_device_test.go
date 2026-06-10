@@ -277,6 +277,35 @@ func TestUnauthorizedDeviceRule_AllowsAlertAfterCooldown(t *testing.T) {
 	}
 }
 
+func TestUnauthorizedDeviceRule_PeriodicCleanupStaleRemovesOldAlerts(t *testing.T) {
+	rule := newUnauthorizedDeviceRuleForTest(t, config.UnauthorizedDeviceConfig{
+		Enabled:         true,
+		ProtectedBSSIDs: []string{"aa:bb:cc:dd:ee:ff"},
+		Cooldown:        time.Minute,
+	})
+
+	base := time.Unix(100, 0)
+	staleMAC := "00:00:00:00:00:01"
+
+	rule.mu.Lock()
+	rule.lastAlertByMAC[staleMAC] = base
+	rule.mu.Unlock()
+
+	frame := unauthorizedDeviceFrame(t, parser.FrameTypeAuth)
+	frame.Timestamp = base.Add(2 * time.Minute)
+
+	for i := 0; i < 10000; i++ {
+		rule.Process(frame)
+	}
+
+	rule.mu.Lock()
+	defer rule.mu.Unlock()
+
+	if _, ok := rule.lastAlertByMAC[staleMAC]; ok {
+		t.Fatalf("stale alert entry for %s was not removed after periodic cleanup", staleMAC)
+	}
+}
+
 func TestUnauthorizedDeviceRule_UsesDstMACWhenBSSIDMissing(t *testing.T) {
 	rule := newUnauthorizedDeviceRuleForTest(t, config.UnauthorizedDeviceConfig{
 		Enabled:         true,

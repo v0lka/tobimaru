@@ -43,7 +43,7 @@ detection:
   enabled: true                   # master switch for detection engine
   dedup_window: 30s               # suppress duplicate alerts within this window
   alert_buffer_size: 256          # buffered alerts channel capacity
-  # Rule-specific configs will be added in tasks 2.3–2.7
+
   deauth_flood:
     enabled: true
     threshold: 10

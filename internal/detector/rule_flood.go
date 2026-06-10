@@ -74,6 +74,9 @@ func (r *floodRule) process(frame *parser.ParsedFrame) []*SecurityEvent {
 		i++
 	}
 	tr.timestamps = tr.timestamps[i:]
+	if len(tr.timestamps) > r.threshold {
+		tr.timestamps = tr.timestamps[len(tr.timestamps)-r.threshold:]
+	}
 
 	if len(tr.timestamps) < r.threshold {
 		return nil
