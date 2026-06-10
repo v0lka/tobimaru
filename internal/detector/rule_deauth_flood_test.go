@@ -44,6 +44,38 @@ func TestDeauthFloodRule_ThresholdReached(t *testing.T) {
 	}
 }
 
+func TestDeauthFloodRule_TimestampsAreCappedToThreshold(t *testing.T) {
+	rule := newDeauthFloodRuleForTest(t, 5, 10*time.Second)
+	base := time.Unix(100, 0)
+
+	frame := deauthFrame(t, base.Add(7*time.Second), "00:11:22:33:44:55", "aa:bb:cc:dd:ee:ff")
+	key := floodKey(frame)
+
+	rule.rule.mu.Lock()
+	rule.rule.tracker[key] = &floodTracker{
+		timestamps: []time.Time{
+			base,
+			base.Add(1 * time.Second),
+			base.Add(2 * time.Second),
+			base.Add(3 * time.Second),
+			base.Add(4 * time.Second),
+			base.Add(5 * time.Second),
+			base.Add(6 * time.Second),
+		},
+		lastSeen: base.Add(6 * time.Second),
+	}
+	rule.rule.mu.Unlock()
+
+	events := rule.Process(frame)
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+
+	if events[0].FrameCount != 5 {
+		t.Fatalf("FrameCount = %d, want capped threshold 5", events[0].FrameCount)
+	}
+}
+
 func TestDeauthFloodRule_IgnoresNonDeauth(t *testing.T) {
 	rule := newDeauthFloodRuleForTest(t, 1, 10*time.Second)
 	frame := deauthFrame(t, time.Unix(100, 0), "00:11:22:33:44:55", "aa:bb:cc:dd:ee:ff")

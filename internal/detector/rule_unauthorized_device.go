@@ -21,6 +21,7 @@ type UnauthorizedDeviceRule struct {
 
 	mu             sync.Mutex
 	lastAlertByMAC map[string]time.Time
+	callCount      uint64
 }
 
 func (r *UnauthorizedDeviceRule) Name() string {
@@ -31,10 +32,6 @@ func (r *UnauthorizedDeviceRule) Init(cfg config.DetectionConfig) error {
 	r.enabled = cfg.UnauthorizedDevice.Enabled
 	r.alertOnProbe = cfg.UnauthorizedDevice.AlertOnProbe
 	r.cooldown = cfg.UnauthorizedDevice.Cooldown
-
-	if r.cooldown <= 0 {
-		r.cooldown = config.DefaultUnauthorizedDeviceCooldown
-	}
 
 	r.protectedBSSIDs = make(map[string]struct{}, len(cfg.UnauthorizedDevice.ProtectedBSSIDs))
 	r.protectedSSIDs = make(map[string]struct{}, len(cfg.UnauthorizedDevice.ProtectedSSIDs))
@@ -74,6 +71,9 @@ func (r *UnauthorizedDeviceRule) Init(cfg config.DetectionConfig) error {
 	if r.enabled && r.alertOnProbe && len(r.protectedSSIDs) == 0 {
 		return invalidRuleConfig(r.Name(), "alert_on_probe requires at least one protected_ssid")
 	}
+	if r.enabled && r.cooldown <= 0 {
+		return invalidRuleConfig(r.Name(), "cooldown must be > 0")
+	}
 
 	return nil
 }
@@ -87,11 +87,31 @@ func (r *UnauthorizedDeviceRule) Process(frame *parser.ParsedFrame) []*SecurityE
 		return nil
 	}
 
+	r.trackCall(frame.Timestamp)
+
 	if frame.FrameType == parser.FrameTypeProbeRequest {
 		return r.processProbeRequest(frame)
 	}
 
 	return r.processProtectedAPAccess(frame)
+}
+
+func (r *UnauthorizedDeviceRule) trackCall(now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.callCount++
+	if r.callCount%10000 == 0 {
+		r.cleanupStale(now)
+	}
+}
+
+func (r *UnauthorizedDeviceRule) cleanupStale(now time.Time) {
+	for mac, lastAlert := range r.lastAlertByMAC {
+		if now.Sub(lastAlert) > r.cooldown {
+			delete(r.lastAlertByMAC, mac)
+		}
+	}
 }
 
 func (r *UnauthorizedDeviceRule) isRelevantFrameType(frameType parser.FrameType) bool {
@@ -153,15 +173,14 @@ func (r *UnauthorizedDeviceRule) emitUnauthorizedDeviceEvent(
 	protectedTarget string,
 ) []*SecurityEvent {
 	srcMAC := frame.SrcMAC.String()
-
-	if _, ok := r.whitelist[srcMAC]; ok {
-		return nil
-	}
-
 	now := frame.Timestamp
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if _, ok := r.whitelist[srcMAC]; ok {
+		return nil
+	}
 
 	if lastAlert, ok := r.lastAlertByMAC[srcMAC]; ok && now.Sub(lastAlert) < r.cooldown {
 		return nil

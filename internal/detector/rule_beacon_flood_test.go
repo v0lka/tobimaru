@@ -40,9 +40,11 @@ func TestBeaconFloodRule_ThresholdReached(t *testing.T) {
 	finishBeaconFloodLearningForTest(t, rule, base)
 
 	var events []*SecurityEvent
+	var lastFrame *parser.ParsedFrame
+
 	for i := range 5 {
-		frame := beaconFloodFrame(t, i, 6, base.Add(time.Duration(i)*time.Second))
-		events = rule.Process(frame)
+		lastFrame = beaconFloodFrame(t, i, 6, base.Add(time.Duration(i)*time.Second))
+		events = rule.Process(lastFrame)
 	}
 
 	if len(events) != 1 {
@@ -50,6 +52,15 @@ func TestBeaconFloodRule_ThresholdReached(t *testing.T) {
 	}
 
 	ev := events[0]
+
+	if ev.SrcMAC.String() != lastFrame.SrcMAC.String() {
+		t.Errorf("SrcMAC = %s, want %s", ev.SrcMAC, lastFrame.SrcMAC)
+	}
+
+	if ev.BSSID.String() != lastFrame.BSSID.String() {
+		t.Errorf("BSSID = %s, want %s", ev.BSSID, lastFrame.BSSID)
+	}
+
 	if ev.EventType != "beacon_flood" {
 		t.Errorf("EventType = %q, want beacon_flood", ev.EventType)
 	}
@@ -61,6 +72,22 @@ func TestBeaconFloodRule_ThresholdReached(t *testing.T) {
 	}
 	if ev.Metadata["new_bssid_count"] != 5 {
 		t.Errorf("new_bssid_count = %v, want 5", ev.Metadata["new_bssid_count"])
+	}
+}
+
+func TestBeaconFloodRule_InitRejectsWindowBelowOneSecond(t *testing.T) {
+	rule := &BeaconFloodRule{}
+
+	err := rule.Init(config.DetectionConfig{
+		BeaconFlood: config.BeaconFloodConfig{
+			Threshold:      5,
+			Window:         500 * time.Millisecond,
+			LearningPeriod: time.Second,
+		},
+	})
+
+	if err == nil {
+		t.Fatal("Init() expected error for window below 1s")
 	}
 }
 

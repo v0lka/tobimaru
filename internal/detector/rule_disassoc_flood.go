@@ -20,11 +20,9 @@ func (r *DisassocFloodRule) Init(cfg config.DetectionConfig) error {
 	window := cfg.DisassocFlood.Window
 
 	if threshold <= 0 {
-		threshold = config.DefaultDisassocFloodThreshold
+		return invalidRuleConfig(r.Name(), "threshold must be > 0")
 	}
-	if window <= 0 {
-		window = config.DefaultDisassocFloodWindow
-	}
+
 	if window < time.Second {
 		return invalidRuleConfig(r.Name(), "window must be >= 1s")
 	}

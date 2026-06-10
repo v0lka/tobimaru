@@ -20,11 +20,9 @@ func (r *DeauthFloodRule) Init(cfg config.DetectionConfig) error {
 	window := cfg.DeauthFlood.Window
 
 	if threshold <= 0 {
-		threshold = config.DefaultDeauthFloodThreshold
+		return invalidRuleConfig(r.Name(), "threshold must be > 0")
 	}
-	if window <= 0 {
-		window = config.DefaultDeauthFloodWindow
-	}
+
 	if window < time.Second {
 		return invalidRuleConfig(r.Name(), "window must be >= 1s")
 	}

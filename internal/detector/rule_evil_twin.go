@@ -48,19 +48,16 @@ func (r *EvilTwinRule) Init(cfg config.DetectionConfig) error {
 	r.minBeacons = cfg.EvilTwin.MinBeacons
 
 	if r.scoreThreshold <= 0 {
-		r.scoreThreshold = config.DefaultEvilTwinScoreThreshold
+		return invalidRuleConfig(r.Name(), "score_threshold must be > 0")
 	}
 	if r.staleTimeout <= 0 {
-		r.staleTimeout = config.DefaultEvilTwinStaleTimeout
+		return invalidRuleConfig(r.Name(), "stale_timeout must be > 0")
 	}
 	if r.learningPeriod < 0 {
 		return invalidRuleConfig(r.Name(), "learning_period must be >= 0")
 	}
-	if r.learningPeriod == 0 {
-		r.learningPeriod = config.DefaultEvilTwinLearningPeriod
-	}
 	if r.minBeacons <= 0 {
-		r.minBeacons = config.DefaultEvilTwinMinBeacons
+		return invalidRuleConfig(r.Name(), "min_beacons must be > 0")
 	}
 
 	r.apsBySSID = make(map[string][]*evilTwinAPRecord)
@@ -135,7 +132,11 @@ func (r *EvilTwinRule) evaluateCandidateLocked(
 		return nil
 	}
 
-	alertKey := ssid + ":" + legitimate.BSSID + ":" + candidate.BSSID
+	b1, b2 := legitimate.BSSID, candidate.BSSID
+	if b1 > b2 {
+		b1, b2 = b2, b1
+	}
+	alertKey := ssid + ":" + b1 + ":" + b2
 	if last, ok := r.alerted[alertKey]; ok && now.Sub(last) < r.staleTimeout {
 		return nil
 	}
@@ -247,14 +248,17 @@ func evilTwinScore(known, candidate *evilTwinAPRecord) (int, []string) {
 	}
 
 	if !sameIE(known.InfoElements, candidate.InfoElements, 45) {
+		score += 10
 		mismatches = append(mismatches, "ht_capabilities")
 	}
 
 	if !sameIE(known.InfoElements, candidate.InfoElements, 191) {
+		score += 10
 		mismatches = append(mismatches, "vht_capabilities")
 	}
 
 	if !sameIE(known.InfoElements, candidate.InfoElements, 127) {
+		score += 5
 		mismatches = append(mismatches, "extended_capabilities")
 	}
 

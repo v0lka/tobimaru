@@ -40,16 +40,13 @@ func (r *BeaconFloodRule) Init(cfg config.DetectionConfig) error {
 	r.learningPeriod = cfg.BeaconFlood.LearningPeriod
 
 	if r.threshold <= 0 {
-		r.threshold = config.DefaultBeaconFloodThreshold
+		return invalidRuleConfig(r.Name(), "threshold must be > 0")
 	}
-	if r.window <= 0 {
-		r.window = config.DefaultBeaconFloodWindow
+	if r.window < time.Second {
+		return invalidRuleConfig(r.Name(), "window must be >= 1s")
 	}
 	if r.learningPeriod < 0 {
 		return invalidRuleConfig(r.Name(), "learning_period must be >= 0")
-	}
-	if r.learningPeriod == 0 {
-		r.learningPeriod = config.DefaultBeaconFloodLearningPeriod
 	}
 
 	r.knownBSSIDs = make(map[string]time.Time)
@@ -113,6 +110,8 @@ func (r *BeaconFloodRule) Process(frame *parser.ParsedFrame) []*SecurityEvent {
 	}
 
 	ev := NewEvent(now, r.Name(), SeverityWarning)
+	ev.SrcMAC = frame.SrcMAC
+	ev.BSSID = frame.BSSID
 	ev.Channel = frame.Channel
 	ev.RSSI = frame.RSSI
 	ev.FrameCount = st.beaconCount

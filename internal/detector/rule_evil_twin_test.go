@@ -115,6 +115,44 @@ func TestEvilTwinRule_DetectsRSNMismatch(t *testing.T) {
 	}
 }
 
+func TestEvilTwinScore_AddsSmallWeightsForCapabilitiesIEs(t *testing.T) {
+	known := &evilTwinAPRecord{
+		Channel:    6,
+		Capability: 0x0431,
+		InfoElements: map[uint8][]byte{
+			45:  {0x01},
+			191: {0x01},
+			127: {0x01},
+			48:  {0x01},
+			221: {0x01},
+		},
+	}
+
+	candidate := &evilTwinAPRecord{
+		Channel:    6,
+		Capability: 0x0431,
+		InfoElements: map[uint8][]byte{
+			45:  {0x02},
+			191: {0x02},
+			127: {0x02},
+			48:  {0x01},
+			221: {0x01},
+		},
+	}
+
+	score, mismatches := evilTwinScore(known, candidate)
+
+	if score != 75 {
+		t.Fatalf("score = %d, want 75", score)
+	}
+
+	for _, want := range []string{"ht_capabilities", "vht_capabilities", "extended_capabilities"} {
+		if !containsString(mismatches, want) {
+			t.Fatalf("mismatches = %v, want %s", mismatches, want)
+		}
+	}
+}
+
 func TestEvilTwinRule_MinBeaconsIsRespected(t *testing.T) {
 	rule := newEvilTwinRuleForTest(t, config.EvilTwinConfig{
 		ScoreThreshold: 80,
@@ -178,7 +216,21 @@ func TestEvilTwinRule_SuppressesDuplicatePairWithinStaleTimeout(t *testing.T) {
 
 	second := rule.Process(evilTwinFrame(t, parser.FrameTypeBeacon, base.Add(2*time.Second), "CorpWiFi", "11:22:33:44:55:66", 11, evilTwinRSN(1)))
 	if len(second) != 0 {
-		t.Fatalf("duplicate detection got %d events, want 0", len(second))
+		t.Fatalf("second duplicate detection got %d events, want 0", len(second))
+	}
+
+	swapped := rule.Process(evilTwinFrame(
+		t,
+		parser.FrameTypeBeacon,
+		base.Add(3*time.Second),
+		"CorpWiFi",
+		"aa:bb:cc:dd:ee:ff",
+		6,
+		evilTwinRSN(1),
+	))
+
+	if len(swapped) != 0 {
+		t.Fatalf("swapped duplicate detection got %d events, want 0", len(swapped))
 	}
 }
 
