@@ -334,3 +334,260 @@ func TestValidationErrorString(t *testing.T) {
 		t.Errorf("got %q, want 'interface' in error string", s)
 	}
 }
+
+func TestStateDefaults(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+state:
+  enabled: true
+`
+	cfg, err := LoadReader(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.State.TTL != DefaultStateTTL {
+		t.Errorf("got state.ttl %v, want %v", cfg.State.TTL, DefaultStateTTL)
+	}
+	if cfg.State.SweepInterval != DefaultStateSweepInterval {
+		t.Errorf("got state.sweep_interval %v, want %v", cfg.State.SweepInterval, DefaultStateSweepInterval)
+	}
+}
+
+func TestStateZeroValuesGetDefaults(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+state:
+  enabled: true
+  ttl: 0s
+  sweep_interval: 0s
+`
+	cfg, err := LoadReader(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.State.TTL != DefaultStateTTL {
+		t.Errorf("got state.ttl %v, want default %v", cfg.State.TTL, DefaultStateTTL)
+	}
+}
+
+func TestStateNegativeTTLValidation(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+state:
+  enabled: true
+  ttl: -1s
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if err == nil {
+		t.Fatal("got nil, want validation error for negative state.ttl")
+	}
+	if !errors.Is(err, ErrInvalidStateTTL) {
+		t.Errorf("got %v, want ErrInvalidStateTTL", err)
+	}
+}
+
+func TestStateNegativeSweepIntervalValidation(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+state:
+  enabled: true
+  sweep_interval: -1s
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if err == nil {
+		t.Fatal("got nil, want validation error for negative state.sweep_interval")
+	}
+	if !errors.Is(err, ErrInvalidSweepInterval) {
+		t.Errorf("got %v, want ErrInvalidSweepInterval", err)
+	}
+}
+
+func TestStateDisabledSkipsValidation(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+state:
+  enabled: false
+  ttl: -1s
+`
+	// state.enabled=false must skip validation entirely.
+	if _, err := LoadReader(strings.NewReader(yaml)); err != nil {
+		t.Fatalf("unexpected error when state disabled: %v", err)
+	}
+}
+
+func TestStorageDefaults(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+storage:
+  enabled: true
+`
+	cfg, err := LoadReader(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Storage.Path != DefaultStoragePath {
+		t.Errorf("got storage.path %q, want %q", cfg.Storage.Path, DefaultStoragePath)
+	}
+	if cfg.Storage.SnapshotInterval != DefaultSnapshotInterval {
+		t.Errorf("got storage.snapshot_interval %v, want %v", cfg.Storage.SnapshotInterval, DefaultSnapshotInterval)
+	}
+	if cfg.Storage.MaxSnapshots != DefaultMaxSnapshots {
+		t.Errorf("got storage.max_snapshots %d, want %d", cfg.Storage.MaxSnapshots, DefaultMaxSnapshots)
+	}
+	if cfg.Storage.MaxEvents != DefaultMaxEvents {
+		t.Errorf("got storage.max_events %d, want %d", cfg.Storage.MaxEvents, DefaultMaxEvents)
+	}
+}
+
+func TestStorageNegativeSnapshotIntervalValidation(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+storage:
+  enabled: true
+  snapshot_interval: -1s
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if err == nil {
+		t.Fatal("got nil, want validation error for negative storage.snapshot_interval")
+	}
+	if !errors.Is(err, ErrInvalidSnapshotInterval) {
+		t.Errorf("got %v, want ErrInvalidSnapshotInterval", err)
+	}
+}
+
+func TestStorageDisabledSkipsValidation(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+storage:
+  enabled: false
+  snapshot_interval: -1s
+`
+	if _, err := LoadReader(strings.NewReader(yaml)); err != nil {
+		t.Fatalf("unexpected error when storage disabled: %v", err)
+	}
+}
+
+func TestAutoLearningDefaults(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+whitelist:
+  auto_learning:
+    enabled: true
+`
+	cfg, err := LoadReader(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Whitelist.AutoLearning.Duration != DefaultAutoLearningDuration {
+		t.Errorf("got auto_learning.duration %v, want %v",
+			cfg.Whitelist.AutoLearning.Duration, DefaultAutoLearningDuration)
+	}
+}
+
+func TestAutoLearningNegativeDurationValidation(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+whitelist:
+  auto_learning:
+    enabled: true
+    duration: -1s
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if err == nil {
+		t.Fatal("got nil, want validation error for negative auto_learning.duration")
+	}
+	if !errors.Is(err, ErrInvalidLearningDuration) {
+		t.Errorf("got %v, want ErrInvalidLearningDuration", err)
+	}
+}
+
+// --- API config tests ---
+
+func TestAPIDefaults(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: false
+`
+	cfg, err := LoadReader(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.API.Listen != DefaultAPIListen {
+		t.Errorf("got listen %q, want %q", cfg.API.Listen, DefaultAPIListen)
+	}
+	if cfg.API.ReadTimeout != DefaultAPIReadTimeout {
+		t.Errorf("got read_timeout %v, want %v", cfg.API.ReadTimeout, DefaultAPIReadTimeout)
+	}
+	if cfg.API.Auth.SessionTTL != DefaultAPISessionTTL {
+		t.Errorf("got session_ttl %v, want %v", cfg.API.Auth.SessionTTL, DefaultAPISessionTTL)
+	}
+}
+
+func TestAPIInvalidListen(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: true
+  listen: "not-a-host-port"
+  auth:
+    enabled: false
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if !errors.Is(err, ErrInvalidAPIListen) {
+		t.Errorf("got %v, want ErrInvalidAPIListen", err)
+	}
+}
+
+func TestAPIAuthRequiresAdminHash(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: true
+  listen: "127.0.0.1:8080"
+  auth:
+    enabled: true
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if !errors.Is(err, ErrMissingAdminHash) {
+		t.Errorf("got %v, want ErrMissingAdminHash", err)
+	}
+}
+
+func TestAPIRejectsBadBcryptHash(t *testing.T) {
+	yaml := `
+monitor:
+  interface: wlan0
+api:
+  enabled: true
+  listen: "127.0.0.1:8080"
+  auth:
+    enabled: true
+    admin_password_hash: "plaintext-not-bcrypt"
+`
+	_, err := LoadReader(strings.NewReader(yaml))
+	if !errors.Is(err, ErrInvalidPasswordHash) {
+		t.Errorf("got %v, want ErrInvalidPasswordHash", err)
+	}
+}
+
+func TestAPIAcceptsRealBcryptHash(t *testing.T) {
+	// $2a$ prefix and 60-char total length — enough for the syntactic check.
+	yaml := "\nmonitor:\n  interface: wlan0\napi:\n  enabled: true\n  listen: \"127.0.0.1:8080\"\n  auth:\n    enabled: true\n    admin_password_hash: \"$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345\"\n"
+	if _, err := LoadReader(strings.NewReader(yaml)); err != nil {
+		t.Errorf("got %v, want no error", err)
+	}
+}

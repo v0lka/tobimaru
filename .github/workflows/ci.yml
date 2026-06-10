@@ -29,6 +29,35 @@ jobs:
         with:
           version: "v2.12.2"
 
+  web:
+    name: Web (Vite build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install SPA dependencies
+        run: cd web && npm install --no-audit --no-fund
+
+      - name: Build SPA
+        run: cd web && npm run build
+
+      - name: Lint SPA
+        run: cd web && npm run lint
+
+      - name: Upload built SPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: internal/api/web/dist
+
   test:
     name: Test
     runs-on: ubuntu-latest

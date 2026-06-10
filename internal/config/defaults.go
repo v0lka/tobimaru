@@ -20,23 +20,17 @@ func DefaultChannels5GHz() []int {
 	}
 }
 
-func applyDefaults(cfg *Config) {
-	applyLogDefaults(cfg)
-	applyCaptureDefaults(cfg)
-	applyChannelHoppingDefaults(cfg)
-	applyDetectionDefaults(cfg)
-}
 
-func applyLogDefaults(cfg *Config) {
+func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value checks, not branching complexity
+	// Log defaults.
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = DefaultLogLevel
 	}
 	if cfg.Log.Format == "" {
 		cfg.Log.Format = DefaultLogFormat
 	}
-}
 
-func applyCaptureDefaults(cfg *Config) {
+	// Capture defaults.
 	if cfg.Monitor.Capture.Snaplen == 0 {
 		cfg.Monitor.Capture.Snaplen = DefaultSnaplen
 	}
@@ -53,9 +47,8 @@ func applyCaptureDefaults(cfg *Config) {
 		v := DefaultPromiscuous
 		cfg.Monitor.Capture.Promiscuous = &v
 	}
-}
 
-func applyChannelHoppingDefaults(cfg *Config) {
+	// Channel hopping defaults.
 	if cfg.Monitor.ChannelHopping.Dwell == 0 {
 		cfg.Monitor.ChannelHopping.Dwell = DefaultDwellTime
 	}
@@ -68,9 +61,8 @@ func applyChannelHoppingDefaults(cfg *Config) {
 	if cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier == 0 {
 		cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier = DefaultMultiplier
 	}
-}
 
-func applyDetectionDefaults(cfg *Config) {
+	// Detection defaults.
 	if cfg.Detection.DedupWindow == 0 {
 		cfg.Detection.DedupWindow = DefaultDedupWindow
 	}
@@ -78,29 +70,19 @@ func applyDetectionDefaults(cfg *Config) {
 		cfg.Detection.AlertBufferSize = DefaultAlertBufferSize
 	}
 
-	applyFloodDefaults(cfg)
-	applyEvilTwinDefaults(cfg)
-
-	if cfg.Detection.UnauthorizedDevice.Cooldown == 0 {
-		cfg.Detection.UnauthorizedDevice.Cooldown = DefaultUnauthorizedDeviceCooldown
-	}
-}
-
-func applyFloodDefaults(cfg *Config) {
+	// Detection rule defaults.
 	if cfg.Detection.DeauthFlood.Threshold == 0 {
 		cfg.Detection.DeauthFlood.Threshold = DefaultDeauthFloodThreshold
 	}
 	if cfg.Detection.DeauthFlood.Window == 0 {
 		cfg.Detection.DeauthFlood.Window = DefaultDeauthFloodWindow
 	}
-
 	if cfg.Detection.DisassocFlood.Threshold == 0 {
 		cfg.Detection.DisassocFlood.Threshold = DefaultDisassocFloodThreshold
 	}
 	if cfg.Detection.DisassocFlood.Window == 0 {
 		cfg.Detection.DisassocFlood.Window = DefaultDisassocFloodWindow
 	}
-
 	if cfg.Detection.BeaconFlood.Threshold == 0 {
 		cfg.Detection.BeaconFlood.Threshold = DefaultBeaconFloodThreshold
 	}
@@ -110,9 +92,6 @@ func applyFloodDefaults(cfg *Config) {
 	if cfg.Detection.BeaconFlood.LearningPeriod == 0 {
 		cfg.Detection.BeaconFlood.LearningPeriod = DefaultBeaconFloodLearningPeriod
 	}
-}
-
-func applyEvilTwinDefaults(cfg *Config) {
 	if cfg.Detection.EvilTwin.ScoreThreshold == 0 {
 		cfg.Detection.EvilTwin.ScoreThreshold = DefaultEvilTwinScoreThreshold
 	}
@@ -124,5 +103,59 @@ func applyEvilTwinDefaults(cfg *Config) {
 	}
 	if cfg.Detection.EvilTwin.MinBeacons == 0 {
 		cfg.Detection.EvilTwin.MinBeacons = DefaultEvilTwinMinBeacons
+	}
+	if cfg.Detection.UnauthorizedDevice.Cooldown == 0 {
+		cfg.Detection.UnauthorizedDevice.Cooldown = DefaultUnauthorizedDeviceCooldown
+	}
+
+	// State engine defaults.
+	if cfg.State.TTL == 0 {
+		cfg.State.TTL = DefaultStateTTL
+	}
+	if cfg.State.SweepInterval == 0 {
+		cfg.State.SweepInterval = DefaultStateSweepInterval
+	}
+
+	// Auto-learning defaults.
+	if cfg.Whitelist.AutoLearning.Duration == 0 {
+		cfg.Whitelist.AutoLearning.Duration = DefaultAutoLearningDuration
+	}
+
+	// Storage defaults.
+	if cfg.Storage.Path == "" {
+		cfg.Storage.Path = DefaultStoragePath
+	}
+	if cfg.Storage.SnapshotInterval == 0 {
+		cfg.Storage.SnapshotInterval = DefaultSnapshotInterval
+	}
+	if cfg.Storage.MaxSnapshots == 0 {
+		cfg.Storage.MaxSnapshots = DefaultMaxSnapshots
+	}
+	if cfg.Storage.MaxEvents == 0 {
+		cfg.Storage.MaxEvents = DefaultMaxEvents
+	}
+
+	// API defaults.
+	if cfg.API.Listen == "" {
+		cfg.API.Listen = DefaultAPIListen
+	}
+	if cfg.API.ReadTimeout == 0 {
+		cfg.API.ReadTimeout = DefaultAPIReadTimeout
+	}
+	if cfg.API.WriteTimeout == 0 {
+		cfg.API.WriteTimeout = DefaultAPIWriteTimeout
+	}
+	if cfg.API.IdleTimeout == 0 {
+		cfg.API.IdleTimeout = DefaultAPIIdleTimeout
+	}
+	if cfg.API.ShutdownTimeout == 0 {
+		cfg.API.ShutdownTimeout = DefaultAPIShutdownTimeout
+	}
+	if cfg.API.Auth.SessionTTL == 0 {
+		cfg.API.Auth.SessionTTL = DefaultAPISessionTTL
+	}
+	// When the API is enabled, default auth to enabled for security.
+	if cfg.API.Enabled && !cfg.API.Auth.Enabled {
+		cfg.API.Auth.Enabled = true
 	}
 }
