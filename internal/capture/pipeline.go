@@ -183,7 +183,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 }
 
 // disableMonitorTimeout caps how long Pipeline.Stop waits for the OS-level
-// "disable monitor mode" command (iw/airport) to return. Prevents the daemon
+// "disable monitor mode" command (iw/CoreWLAN) to return. Prevents the daemon
 // from hanging on a broken or unresponsive interface during shutdown.
 const disableMonitorTimeout = 5 * time.Second
 

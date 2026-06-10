@@ -10,21 +10,22 @@ macOS — принципиально более ограниченная пла�
 
 **Суть проблемы.** macOS формально поддерживает monitor mode на встроенном WiFi-адаптере (Broadcom на Intel Mac, собственный чип на Apple Silicon), но с рядом принципиальных ограничений.
 
-Встроенный адаптер переключается в monitor mode двумя способами: через утилиту `airport` (скрыта в `/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport`) или через приложение Wireless Diagnostics (Window → Sniffer). Оба способа требуют сначала отключиться от текущей сети (`airport -z`), после чего адаптер начинает слушать один конкретный канал.
+Встроенный адаптер переключается в monitor mode через BPF-ioctl `BIOCSRFMON` (используется gopacket/pcap через `SetRFMon(true)`) или через приложение Wireless Diagnostics (Window → Sniffer). Перед захватом необходимо вручную отключиться от текущей WiFi-сети — pcap не может одновременно поддерживать подключение и monitor mode на одном адаптере.
+
+**Утилита `airport` удалена Apple в macOS Sonoma 14.4 (март 2024).** Tobimaru использует CoreWLAN-фреймворк через cgo-бридж для переключения каналов и BPF `SetRFMon` для перехода в monitor mode — `airport` больше не требуется.
 
 Ограничения:
 
-- **Нет channel hopping.** Адаптер захватывает только один канал за раз. Переключение канала возможно (`airport --channel=N`), но каждое переключение — это вызов системной утилиты с ненулевой задержкой и возможными пропусками пакетов.
+- **Channel hopping с задержкой.** Адаптер захватывает только один канал за раз. Переключение канала работает через CoreWLAN (`setWLANChannel:error:`), но каждое переключение имеет 1–3 секунды оверхеда с возможными пропусками пакетов.
 - **Отключение от сети обязательно.** Нельзя одновременно быть подключённым к WiFi-сети и слушать эфир на том же адаптере. Это делает невозможной двухрежимную работу (monitor + managed) на одном интерфейсе.
 - **Нестабильность.** На macOS Sonoma и Sequoia пользователи сообщают о ненадёжной работе monitor mode — адаптер иногда не переключается обратно или перестаёт захватывать пакеты после нескольких минут.
-- **Утилита `airport` не документирована.** Apple может удалить или изменить её в любой версии macOS без предупреждения. На некоторых версиях macOS Sequoia она уже работает нестабильно.
 
 **Пути решения:**
 
 | Подход | Плюсы | Минусы |
 |--------|-------|--------|
-| Использовать `airport -z` + BPF capture через libpcap | Работает без доп. оборудования; gopacket поддерживает BPF на macOS | Один канал; нет одновременного подключения; нестабильно |
-| CoreWLAN framework через cgo | Официальный Apple API; переключение канала, сканирование | API ограничен; monitor mode через него ненадёжен; нет документации по raw capture |
+| BPF `SetRFMon` через libpcap + CoreWLAN cgo для channel hopping | Работает без доп. оборудования; официальные Apple API; gopacket поддерживает BPF на macOS | Один канал; нет одновременного подключения; задержка переключения канала 1–3с |
+| CoreWLAN framework через cgo (используется в проекте) | Официальный Apple API; переключение канала, сканирование; стабильно с macOS 14.4+ | API ограничен; нет документации по raw capture |
 | Внешний USB-адаптер с Linux-драйвером | Полноценный monitor mode с channel hopping | Требует кастомного драйвера (kext/dext); Apple блокирует kext начиная с Big Sur |
 | Linux-VM с проброшенным USB-адаптером | Полноценная поддержка как на нативном Linux | Неудобно; требует VM и проброс USB; высокий overhead |
 
@@ -149,7 +150,7 @@ internal/
 │   │   ├── pcap injection
 │   │   └── netlink channel control
 │   ├── darwin.go          // build tag: //go:build darwin
-│   │   ├── airport-based monitor mode
+│   │   ├── CoreWLAN-based channel control (cgo bridge)
 │   │   ├── CoreWLAN via cgo (scan, channel)
 │   │   └── injection: not supported / ESP32 bridge
 │   └── darwin_cgo.go     // CoreWLAN bindings

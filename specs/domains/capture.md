@@ -9,7 +9,8 @@ Provides live 802.11 frame capture via gopacket/pcap on Linux and macOS. Manages
 - `internal/capture/capture.go` — `CaptureHandle` wrapping pcap handle, `OpenCapture()` with RFMon + BPF filter (platform-agnostic; works on Linux and macOS via gopacket/pcap)
 - `internal/capture/monitor.go` — `MonitorModeManager` interface and `ErrNotSupported` sentinel
 - `internal/capture/monitor_linux.go` — Linux implementation via `iw`/`ip` commands (build tag: `linux`)
-- `internal/capture/monitor_darwin.go` — macOS implementation via `airport` utility (build tag: `darwin`)
+- `internal/capture/monitor_darwin.go` — macOS implementation via CoreWLAN cgo bridge + BPF `SetRFMon` (build tag: `darwin`)
+- `internal/capture/monitor_darwin.m` — CoreWLAN Objective-C bridge: `SetInterfaceChannel()` using `CWInterface`/`CWChannel`
 - `internal/capture/monitor_unsupported.go` — Stub returning `ErrNotSupported` (build tag: `!linux && !darwin`)
 - `internal/capture/channel.go` — `ChannelHopper` with weighted dwell time on primary channels
 - `internal/capture/channel_test.go` — tests for create, weighted dwell, disabled, wrap-around, reset, empty channels, 5GHz
@@ -44,7 +45,7 @@ type MonitorModeManager interface {
 var ErrNotSupported = errors.New("monitor mode is not supported on this platform")
 ```
 
-On Linux, `EnableMonitor()` uses `iw dev <iface> set type monitor` + `ip link set <iface> up`. `SetChannel()` uses `iw dev <iface> set channel <n>`. On macOS, `EnableMonitor()` uses `airport <iface> -z` to disconnect before RFMon activation; `SetChannel()` uses `airport <iface> --channel=<N>` (1-3s overhead). On other platforms, all methods return `ErrNotSupported`.
+On Linux, `EnableMonitor()` uses `iw dev <iface> set type monitor` + `ip link set <iface> up`. `SetChannel()` uses `iw dev <iface> set channel <n>`. On macOS, `EnableMonitor()` is a no-op (pcap's `SetRFMon(true)` handles the mode switch via BPF `BIOCSRFMON` ioctl); `SetChannel()` uses CoreWLAN via cgo bridge (`setWLANChannel:error:`, 1-3s overhead). On other platforms, all methods return `ErrNotSupported`.
 
 **Channel hopper:**
 ```go

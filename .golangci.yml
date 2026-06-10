@@ -147,6 +147,7 @@ linters:
     rules:
       - path: web/node_modules/
         linters:
+          - govet
           - gocritic
           - gocyclo
           - intrange
