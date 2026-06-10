@@ -32,7 +32,11 @@ build-all: check-web-dist ## Cross-compile for all target platforms
 	GOOS=darwin GOARCH=arm64 $(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/tobimaru
 
 test: ## Run all tests with race detector
+ifeq ($(shell $(GO) env GOOS),darwin)
+	CGO_LDFLAGS='-Wl,-no_warn_duplicate_libraries' $(GO) test -race -cover -coverprofile=coverage.out ./...
+else
 	$(GO) test -race -cover -coverprofile=coverage.out ./...
+endif
 
 test-cover: test ## Run tests and open coverage report
 	$(GO) tool cover -html=coverage.out
