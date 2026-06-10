@@ -101,7 +101,7 @@ func TestBeaconFloodRule_PcapIntegration_Positive(t *testing.T) {
 	rule := newPcapBeaconRule(t, 3)
 	finishBeaconLearning(t, rule)
 
-	var events []*SecurityEvent
+	events := make([]*SecurityEvent, 0, 3)
 
 	for _, mac := range []string{
 		"02:00:00:00:00:01",
@@ -142,7 +142,7 @@ func TestBeaconFloodRule_PcapIntegration_EdgeBelowThreshold(t *testing.T) {
 	rule := newPcapBeaconRule(t, 3)
 	finishBeaconLearning(t, rule)
 
-	var events []*SecurityEvent
+	events := make([]*SecurityEvent, 0, 2)
 
 	for _, mac := range []string{
 		"02:00:00:00:00:01",
@@ -313,8 +313,9 @@ func (w *pcapReaderWrapper) ReadPacketData() ([]byte, gopacket.CaptureInfo, erro
 func processPcap(t *testing.T, data []byte, rule Rule) []*SecurityEvent {
 	t.Helper()
 
-	var events []*SecurityEvent
-	for _, frame := range parseTestPcap(t, data) {
+	frames := parseTestPcap(t, data)
+	events := make([]*SecurityEvent, 0, len(frames))
+	for _, frame := range frames {
 		events = append(events, rule.Process(frame)...)
 	}
 
@@ -384,7 +385,7 @@ func newPcapBeaconRule(t *testing.T, threshold int) *BeaconFloodRule {
 	return rule
 }
 
-func newPcapEvilTwinRule(t *testing.T, scoreThreshold int, minBeacons int) *EvilTwinRule {
+func newPcapEvilTwinRule(t *testing.T, scoreThreshold, minBeacons int) *EvilTwinRule {
 	t.Helper()
 
 	rule := &EvilTwinRule{}

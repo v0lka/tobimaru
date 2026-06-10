@@ -301,7 +301,7 @@ func finishBeaconFloodLearningForTest(t *testing.T, rule *BeaconFloodRule, now t
 	rule.mu.Unlock()
 }
 
-func beaconFloodFrame(t *testing.T, id int, channel int, ts time.Time) *parser.ParsedFrame {
+func beaconFloodFrame(t *testing.T, id, channel int, ts time.Time) *parser.ParsedFrame {
 	t.Helper()
 
 	return &parser.ParsedFrame{

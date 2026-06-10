@@ -2,6 +2,7 @@ package detector
 
 import (
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -255,6 +256,51 @@ func TestEvilTwinRule_CleanupStaleRemovesOldAPs(t *testing.T) {
 	}
 }
 
+func TestEvilTwinRule_InitRejectsInvalidScoreThreshold(t *testing.T) {
+	rule := &EvilTwinRule{}
+	err := rule.Init(config.DetectionConfig{
+		EvilTwin: config.EvilTwinConfig{
+			ScoreThreshold: 0,
+			StaleTimeout:   5 * time.Minute,
+			LearningPeriod: time.Nanosecond,
+			MinBeacons:     1,
+		},
+	})
+	if err == nil {
+		t.Fatal("Init() expected error for score_threshold <= 0")
+	}
+}
+
+func TestEvilTwinRule_InitRejectsInvalidStaleTimeout(t *testing.T) {
+	rule := &EvilTwinRule{}
+	err := rule.Init(config.DetectionConfig{
+		EvilTwin: config.EvilTwinConfig{
+			ScoreThreshold: 80,
+			StaleTimeout:   0,
+			LearningPeriod: time.Nanosecond,
+			MinBeacons:     1,
+		},
+	})
+	if err == nil {
+		t.Fatal("Init() expected error for stale_timeout <= 0")
+	}
+}
+
+func TestEvilTwinRule_InitRejectsInvalidMinBeacons(t *testing.T) {
+	rule := &EvilTwinRule{}
+	err := rule.Init(config.DetectionConfig{
+		EvilTwin: config.EvilTwinConfig{
+			ScoreThreshold: 80,
+			StaleTimeout:   5 * time.Minute,
+			LearningPeriod: time.Nanosecond,
+			MinBeacons:     0,
+		},
+	})
+	if err == nil {
+		t.Fatal("Init() expected error for min_beacons <= 0")
+	}
+}
+
 func newEvilTwinRuleForTest(t *testing.T, cfg config.EvilTwinConfig) *EvilTwinRule {
 	t.Helper()
 
@@ -313,11 +359,5 @@ func mustEvilTwinMAC(t *testing.T, value string) net.HardwareAddr {
 }
 
 func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(values, target)
 }

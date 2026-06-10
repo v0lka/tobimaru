@@ -7,14 +7,17 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/parser"
 )
 
+// DeauthFloodRule detects deauthentication flood attacks.
 type DeauthFloodRule struct {
 	rule *floodRule
 }
 
+// Name returns the rule identifier.
 func (r *DeauthFloodRule) Name() string {
-	return "deauth_flood"
+	return EventTypeDeauthFlood
 }
 
+// Init validates and applies configuration for this rule.
 func (r *DeauthFloodRule) Init(cfg config.DetectionConfig) error {
 	threshold := cfg.DeauthFlood.Threshold
 	window := cfg.DeauthFlood.Window
@@ -38,6 +41,7 @@ func (r *DeauthFloodRule) Init(cfg config.DetectionConfig) error {
 	return nil
 }
 
+// Process evaluates a parsed 802.11 frame against the deauthentication flood detection rule.
 func (r *DeauthFloodRule) Process(frame *parser.ParsedFrame) []*SecurityEvent {
 	return r.rule.process(frame)
 }

@@ -69,6 +69,21 @@ func TestUnauthorizedDeviceRule_InitRejectsInvalidWhitelistMAC(t *testing.T) {
 	}
 }
 
+func TestUnauthorizedDeviceRule_InitRejectsInvalidCooldown(t *testing.T) {
+	rule := &UnauthorizedDeviceRule{}
+
+	err := rule.Init(config.DetectionConfig{
+		UnauthorizedDevice: config.UnauthorizedDeviceConfig{
+			Enabled:         true,
+			ProtectedBSSIDs: []string{"aa:bb:cc:dd:ee:ff"},
+			Cooldown:        0,
+		},
+	})
+	if err == nil {
+		t.Fatal("Init() expected error for cooldown <= 0")
+	}
+}
+
 func TestUnauthorizedDeviceRule_DisabledProducesNoEvents(t *testing.T) {
 	rule := newUnauthorizedDeviceRuleForTest(t, config.UnauthorizedDeviceConfig{
 		Enabled: false,
@@ -294,7 +309,7 @@ func TestUnauthorizedDeviceRule_PeriodicCleanupStaleRemovesOldAlerts(t *testing.
 	frame := unauthorizedDeviceFrame(t, parser.FrameTypeAuth)
 	frame.Timestamp = base.Add(2 * time.Minute)
 
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		rule.Process(frame)
 	}
 

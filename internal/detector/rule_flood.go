@@ -68,18 +68,37 @@ func (r *floodRule) process(frame *parser.ParsedFrame) []*SecurityEvent {
 	tr.lastSeen = now
 	tr.timestamps = append(tr.timestamps, now)
 
+	// Guard against unbounded memory growth: when frame rate far exceeds the
+	// threshold within a single window (e.g., burst attack), the timestamps
+	// slice can grow without bound until the window boundary resets it. Capping
+	// at 2×threshold keeps enough history for accurate window-pruning while
+	// preventing OOM under sustained bursts.
+	if len(tr.timestamps) > r.threshold*2 {
+		tr.timestamps = tr.timestamps[len(tr.timestamps)-r.threshold*2:]
+	}
+
 	cutoff := now.Add(-r.window)
 	i := 0
 	for i < len(tr.timestamps) && tr.timestamps[i].Before(cutoff) {
 		i++
 	}
 	tr.timestamps = tr.timestamps[i:]
-	if len(tr.timestamps) > r.threshold {
-		tr.timestamps = tr.timestamps[len(tr.timestamps)-r.threshold:]
-	}
 
 	if len(tr.timestamps) < r.threshold {
 		return nil
+	}
+
+	// Capture the true flood metrics BEFORE applying the output cap.
+	// realCount and firstTs reflect all frames within the window — not just
+	// the threshold-capped subset — so downstream consumers (SIEM, logging)
+	// see accurate attack intensity and duration.
+	realCount := len(tr.timestamps)
+	firstTs := tr.timestamps[0]
+
+	// Cap the tracking slice to threshold to bound memory for future
+	// iterations. The real values are already captured above.
+	if len(tr.timestamps) > r.threshold {
+		tr.timestamps = tr.timestamps[len(tr.timestamps)-r.threshold:]
 	}
 
 	ev := NewEvent(now, r.name, r.severity)
@@ -88,8 +107,8 @@ func (r *floodRule) process(frame *parser.ParsedFrame) []*SecurityEvent {
 	ev.BSSID = frame.BSSID
 	ev.Channel = frame.Channel
 	ev.RSSI = frame.RSSI
-	ev.FrameCount = len(tr.timestamps)
-	ev.Duration = now.Sub(tr.timestamps[0])
+	ev.FrameCount = realCount
+	ev.Duration = now.Sub(firstTs)
 	ev.Description = fmt.Sprintf(
 		"%s detected: %d frames in %v from %s targeting BSSID %s",
 		r.name,
