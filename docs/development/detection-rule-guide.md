@@ -497,6 +497,8 @@ for i < len(timestamps) && timestamps[i].Before(cutoff) {
 timestamps = timestamps[i:]
 ```
 
+**Внутренний хелпер `floodRule`** (`internal/detector/rule_flood.go`) предоставляет обобщённую реализацию скользящего окна для flood-правил. `DeauthFloodRule` и `DisassocFloodRule` делегируют `Process()` в `floodRule.process()`, параметризуя его типом фрейма, порогом и окном. При добавлении нового flood-правила (например, CTS/RTS flood в Phase 11) используйте этот хелпер вместо дублирования логики.
+
 ### Трекинг по MAC-адресу
 
 Для правил, отслеживающих поведение конкретных устройств:
