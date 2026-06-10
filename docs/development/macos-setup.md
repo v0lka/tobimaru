@@ -4,24 +4,9 @@
 
 - macOS 13 (Ventura) or later
 - Administrative (root) access for packet capture
-- The `airport` utility must be available (see step 1)
+- No additional utilities required — channel switching uses the built-in CoreWLAN framework
 
-## 1. Install the Airport Utility Symlink
-
-The `airport` utility is an undocumented tool from Apple located inside the
-Apple80211 private framework. Create a symlink to make it accessible:
-
-```bash
-sudo ln -s /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport /usr/local/bin/airport
-```
-
-Verify it works:
-
-```bash
-/usr/local/bin/airport -I
-```
-
-## 2. BPF Device Permissions
+## 1. BPF Device Permissions
 
 Packet capture on macOS requires access to `/dev/bpf*` Berkeley Packet Filter
 devices. By default these are owned by `root:wheel` with permissions `rw-------`
@@ -115,7 +100,7 @@ monitor:
   interface: "en0"
   channel_hopping:
     enabled: true
-    dwell: 2s              # Airport channel switching has 1-3s overhead
+    dwell: 2s              # Channel switching via CoreWLAN has 1-3s overhead
     weighted_dwell:
       enabled: true
       primary_channels: [1, 6, 11]
@@ -133,13 +118,13 @@ macOS can only listen on one channel at a time.
 
 | Feature | Status |
 |---------|--------|
-| Monitor mode capture | Supported via `airport -z` + BPF |
-| Channel hopping | Supported but slow (1-3s per switch) |
+| Monitor mode capture | Supported via BPF (pcap.SetRFMon) |
+| Channel hopping | Supported via CoreWLAN cgo bridge (1-3s per switch) |
 | Frame injection | **Not supported** on built-in adapters |
 | Simultaneous monitor + WiFi connection | **Not supported** (single adapter) |
 | External USB WiFi adapter | Requires kext (blocked since Big Sur) or DriverKit |
 | Apple Silicon (M1/M2/M3/M4) | Monitor mode available but less stable than Intel Macs |
-| macOS Sequoia (15.x) | `airport` utility may be unstable; monitor mode reliability varies |
+| macOS 14.4+ (Sonoma/Sequoia/Tahoe) | Airport utility deprecated; CoreWLAN bridge used instead |
 
 The `IsSupported()` check returns `true` on macOS, but platform capabilities
 are detected at runtime and logged. Active countermeasures (frame injection
@@ -169,7 +154,7 @@ WARN platform limitation detail="frame injection is not supported"
 WARN platform limitation detail="single channel only; full channel hopping is not available"
 WARN platform limitation detail="channel switching has high overhead; increase dwell time"
 WARN platform limitation detail="single WiFi adapter; cannot operate in monitor and managed mode simultaneously"
-INFO enabling monitor mode interface=en0
+INFO enabling monitor mode via BPF SetRFMon; ensure WiFi is disconnected manually before capture interface=en0
 INFO capture started interface=en0 channel_hopping=true
 ```
 
@@ -177,16 +162,13 @@ INFO capture started interface=en0 channel_hopping=true
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `airport utility not found` | Symlink not created | Run step 1 |
 | `Permission denied` on `/dev/bpf*` | Not running as root | Use `sudo` or set up ChmodBPF |
 | `pcap: no such device` | Wrong interface name | Check interface with `ifconfig` |
-| `airport: en0 is not a WLAN interface` | Wrong interface or airport symlink issue | Verify `airport -I` works |
-| No frames captured after start | Interface still connected to WiFi | Ensure `EnableMonitor()` ran; check `airport -z` disconnected |
+| No frames captured after start | Interface still connected to WiFi | Disconnect from WiFi before starting capture |
 
 ## 6. Uninstalling
 
 ```bash
-sudo rm /usr/local/bin/airport
 sudo launchctl unload /Library/LaunchDaemons/org.tobimaru.chmodbpf.plist 2>/dev/null
 sudo rm /Library/LaunchDaemons/org.tobimaru.chmodbpf.plist 2>/dev/null
 ```

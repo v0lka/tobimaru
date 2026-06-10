@@ -8,11 +8,10 @@
 #
 #   macOS:
 #     - interface: typically en0 (use `ifconfig` to find the Wi-Fi interface)
-#     - dwell: recommended 2s or more — airport channel switching has 1-3s overhead
-#     - The airport utility must be installed:
-#         sudo ln -s /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport /usr/local/bin/airport
+#     - dwell: recommended 2s or more — channel switching has 1-3s overhead
 #     - Must be run as root (BPF device permissions)
-#     - Cannot be connected to WiFi and capture simultaneously on the same adapter
+#     - Must disconnect from WiFi before capturing on the same adapter
+#     - Channel hopping works via CoreWLAN (no airport utility needed)
 #     - No frame injection (active countermeasures not available)
 #     - See docs/development/macos-setup.md for detailed setup instructions
 

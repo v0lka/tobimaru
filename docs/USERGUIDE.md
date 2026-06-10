@@ -75,21 +75,15 @@ Setup steps:
    ifconfig | grep -B2 "status: active"
    ```
 
-2. Install the `airport` utility symlink:
+2. Disconnect from WiFi before capturing (macOS cannot monitor while connected on the same adapter).
 
-   ```bash
-   sudo ln -s /System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport /usr/local/bin/airport
-   ```
-
-3. Disconnect from WiFi before capturing (macOS cannot monitor while connected on the same adapter).
-
-4. Run as root:
+3. Run as root:
 
    ```bash
    sudo ./bin/tobimaru -config tobimaru.yaml
    ```
 
-5. Recommended macOS configuration adjustments:
+4. Recommended macOS configuration adjustments:
 
    ```yaml
    monitor:
@@ -268,7 +262,7 @@ Events are deduplicated by `(event_type, source_mac, bssid)` within the configur
 
 - Ensure your WiFi adapter supports monitor mode
 - On Linux: check with `iw phy <phy> info | grep monitor`
-- On macOS: built-in adapters support monitor mode but require the `airport` utility
+- On macOS: built-in adapters support monitor mode via BPF (CoreWLAN for channel hopping)
 
 ### "interface not found"
 
@@ -288,4 +282,4 @@ Events are deduplicated by `(event_type, source_mac, bssid)` within the configur
 ### macOS: slow channel switching
 
 - Set `dwell` to 2 seconds or more
-- macOS `airport` channel switching has 1-3 second overhead; setting dwell below this causes the hopper to spend most time switching rather than capturing
+- macOS channel switching via CoreWLAN has 1-3 second overhead; setting dwell below this causes the hopper to spend most time switching rather than capturing
