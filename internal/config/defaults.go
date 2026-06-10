@@ -21,12 +21,22 @@ func DefaultChannels5GHz() []int {
 }
 
 func applyDefaults(cfg *Config) {
+	applyLogDefaults(cfg)
+	applyCaptureDefaults(cfg)
+	applyChannelHoppingDefaults(cfg)
+	applyDetectionDefaults(cfg)
+}
+
+func applyLogDefaults(cfg *Config) {
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = DefaultLogLevel
 	}
 	if cfg.Log.Format == "" {
 		cfg.Log.Format = DefaultLogFormat
 	}
+}
+
+func applyCaptureDefaults(cfg *Config) {
 	if cfg.Monitor.Capture.Snaplen == 0 {
 		cfg.Monitor.Capture.Snaplen = DefaultSnaplen
 	}
@@ -39,6 +49,13 @@ func applyDefaults(cfg *Config) {
 	if cfg.Monitor.Capture.Timeout == 0 {
 		cfg.Monitor.Capture.Timeout = DefaultTimeout
 	}
+	if cfg.Monitor.Capture.Promiscuous == nil {
+		v := DefaultPromiscuous
+		cfg.Monitor.Capture.Promiscuous = &v
+	}
+}
+
+func applyChannelHoppingDefaults(cfg *Config) {
 	if cfg.Monitor.ChannelHopping.Dwell == 0 {
 		cfg.Monitor.ChannelHopping.Dwell = DefaultDwellTime
 	}
@@ -51,16 +68,25 @@ func applyDefaults(cfg *Config) {
 	if cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier == 0 {
 		cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier = DefaultMultiplier
 	}
-	if cfg.Monitor.Capture.Promiscuous == nil {
-		v := DefaultPromiscuous
-		cfg.Monitor.Capture.Promiscuous = &v
-	}
+}
+
+func applyDetectionDefaults(cfg *Config) {
 	if cfg.Detection.DedupWindow == 0 {
 		cfg.Detection.DedupWindow = DefaultDedupWindow
 	}
 	if cfg.Detection.AlertBufferSize == 0 {
 		cfg.Detection.AlertBufferSize = DefaultAlertBufferSize
 	}
+
+	applyFloodDefaults(cfg)
+	applyEvilTwinDefaults(cfg)
+
+	if cfg.Detection.UnauthorizedDevice.Cooldown == 0 {
+		cfg.Detection.UnauthorizedDevice.Cooldown = DefaultUnauthorizedDeviceCooldown
+	}
+}
+
+func applyFloodDefaults(cfg *Config) {
 	if cfg.Detection.DeauthFlood.Threshold == 0 {
 		cfg.Detection.DeauthFlood.Threshold = DefaultDeauthFloodThreshold
 	}
@@ -84,7 +110,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Detection.BeaconFlood.LearningPeriod == 0 {
 		cfg.Detection.BeaconFlood.LearningPeriod = DefaultBeaconFloodLearningPeriod
 	}
+}
 
+func applyEvilTwinDefaults(cfg *Config) {
 	if cfg.Detection.EvilTwin.ScoreThreshold == 0 {
 		cfg.Detection.EvilTwin.ScoreThreshold = DefaultEvilTwinScoreThreshold
 	}
@@ -96,9 +124,5 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Detection.EvilTwin.MinBeacons == 0 {
 		cfg.Detection.EvilTwin.MinBeacons = DefaultEvilTwinMinBeacons
-	}
-
-	if cfg.Detection.UnauthorizedDevice.Cooldown == 0 {
-		cfg.Detection.UnauthorizedDevice.Cooldown = DefaultUnauthorizedDeviceCooldown
 	}
 }

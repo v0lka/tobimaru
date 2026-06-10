@@ -2,6 +2,7 @@ package detector
 
 import (
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/parser"
 )
 
+// BeaconFloodRule detects beacon flood attacks by tracking new unique BSSIDs
+// per channel within a sliding window.
 type BeaconFloodRule struct {
 	threshold      int
 	window         time.Duration
@@ -30,10 +33,12 @@ type beaconChannelState struct {
 	rssiCounts  map[int]int
 }
 
+// Name returns the rule identifier.
 func (r *BeaconFloodRule) Name() string {
-	return "beacon_flood"
+	return EventTypeBeaconFlood
 }
 
+// Init validates and applies configuration for this rule.
 func (r *BeaconFloodRule) Init(cfg config.DetectionConfig) error {
 	r.threshold = cfg.BeaconFlood.Threshold
 	r.window = cfg.BeaconFlood.Window
@@ -55,6 +60,7 @@ func (r *BeaconFloodRule) Init(cfg config.DetectionConfig) error {
 	return nil
 }
 
+// Process evaluates a parsed 802.11 frame against the beacon flood detection rule.
 func (r *BeaconFloodRule) Process(frame *parser.ParsedFrame) []*SecurityEvent {
 	if frame.FrameType != parser.FrameTypeBeacon {
 		return nil
@@ -162,9 +168,7 @@ func (st *beaconChannelState) reset(now time.Time) {
 }
 
 func (r *BeaconFloodRule) promoteWindowToKnown(st *beaconChannelState) {
-	for bssid, seenAt := range st.newBSSIDs {
-		r.knownBSSIDs[bssid] = seenAt
-	}
+	maps.Copy(r.knownBSSIDs, st.newBSSIDs)
 }
 
 func (r *BeaconFloodRule) cleanupStale(now time.Time) {

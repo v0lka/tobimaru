@@ -11,6 +11,8 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/parser"
 )
 
+// EvilTwinRule detects evil twin access points by comparing beacon/probe response
+// parameters (channel, RSN, capabilities, etc.) against a known legitimate AP.
 type EvilTwinRule struct {
 	scoreThreshold int
 	staleTimeout   time.Duration
@@ -37,10 +39,12 @@ type evilTwinAPRecord struct {
 	BeaconCount    int
 }
 
+// Name returns the rule identifier.
 func (r *EvilTwinRule) Name() string {
-	return "evil_twin"
+	return EventTypeEvilTwin
 }
 
+// Init validates and applies configuration for this rule.
 func (r *EvilTwinRule) Init(cfg config.DetectionConfig) error {
 	r.scoreThreshold = cfg.EvilTwin.ScoreThreshold
 	r.staleTimeout = cfg.EvilTwin.StaleTimeout
@@ -66,6 +70,7 @@ func (r *EvilTwinRule) Init(cfg config.DetectionConfig) error {
 	return nil
 }
 
+// Process evaluates a parsed 802.11 frame against the evil twin detection rule.
 func (r *EvilTwinRule) Process(frame *parser.ParsedFrame) []*SecurityEvent {
 	if frame.FrameType != parser.FrameTypeBeacon &&
 		frame.FrameType != parser.FrameTypeProbeResponse {
@@ -221,9 +226,9 @@ func (r *EvilTwinRule) firstObservedAP(ssid, excludeBSSID string) *evilTwinAPRec
 	return first
 }
 
-func evilTwinScore(known, candidate *evilTwinAPRecord) (int, []string) {
-	score := 50
-	mismatches := []string{"bssid"}
+func evilTwinScore(known, candidate *evilTwinAPRecord) (score int, mismatches []string) {
+	score = 50
+	mismatches = []string{"bssid"}
 
 	if known.Channel != 0 &&
 		candidate.Channel != 0 &&

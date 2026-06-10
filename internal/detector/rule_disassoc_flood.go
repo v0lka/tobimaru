@@ -7,14 +7,17 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/parser"
 )
 
+// DisassocFloodRule detects disassociation flood attacks.
 type DisassocFloodRule struct {
 	rule *floodRule
 }
 
+// Name returns the rule identifier.
 func (r *DisassocFloodRule) Name() string {
-	return "disassoc_flood"
+	return EventTypeDisassocFlood
 }
 
+// Init validates and applies configuration for this rule.
 func (r *DisassocFloodRule) Init(cfg config.DetectionConfig) error {
 	threshold := cfg.DisassocFlood.Threshold
 	window := cfg.DisassocFlood.Window
@@ -38,6 +41,7 @@ func (r *DisassocFloodRule) Init(cfg config.DetectionConfig) error {
 	return nil
 }
 
+// Process evaluates a parsed 802.11 frame against the disassociation flood detection rule.
 func (r *DisassocFloodRule) Process(frame *parser.ParsedFrame) []*SecurityEvent {
 	return r.rule.process(frame)
 }

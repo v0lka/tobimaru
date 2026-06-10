@@ -44,7 +44,12 @@ func TestDeauthFloodRule_ThresholdReached(t *testing.T) {
 	}
 }
 
-func TestDeauthFloodRule_TimestampsAreCappedToThreshold(t *testing.T) {
+// TestDeauthFloodRule_RealCountAndDurationAfterCap verifies that FrameCount
+// and Duration in the emitted event reflect the true flood intensity before the
+// internal cap, not the truncated threshold subset. The internal timestamps
+// slice is capped to threshold for memory safety, but the event metrics should
+// report actual attack parameters.
+func TestDeauthFloodRule_RealCountAndDurationAfterCap(t *testing.T) {
 	rule := newDeauthFloodRuleForTest(t, 5, 10*time.Second)
 	base := time.Unix(100, 0)
 
@@ -71,8 +76,22 @@ func TestDeauthFloodRule_TimestampsAreCappedToThreshold(t *testing.T) {
 		t.Fatalf("got %d events, want 1", len(events))
 	}
 
-	if events[0].FrameCount != 5 {
-		t.Fatalf("FrameCount = %d, want capped threshold 5", events[0].FrameCount)
+	// 7 pre-seeded + 1 new = 8 frames total in window; threshold=5
+	if events[0].FrameCount != 8 {
+		t.Fatalf("FrameCount = %d, want real count 8 (pre-cap)", events[0].FrameCount)
+	}
+
+	if events[0].Duration != 7*time.Second {
+		t.Fatalf("Duration = %v, want real duration 7s (pre-cap)", events[0].Duration)
+	}
+
+	// Verify tracker still exists (post-emission reset) and timestamps are cleared.
+	rule.rule.mu.Lock()
+	tr := rule.rule.tracker[key]
+	rule.rule.mu.Unlock()
+
+	if tr == nil {
+		t.Fatal("tracker entry was unexpectedly removed after event emission")
 	}
 }
 
@@ -127,6 +146,32 @@ func TestDeauthFloodRule_BroadcastMetadata(t *testing.T) {
 	}
 }
 
+func TestDeauthFloodRule_InitRejectsInvalidThreshold(t *testing.T) {
+	rule := &DeauthFloodRule{}
+	err := rule.Init(config.DetectionConfig{
+		DeauthFlood: config.DeauthFloodConfig{
+			Threshold: 0,
+			Window:    10 * time.Second,
+		},
+	})
+	if err == nil {
+		t.Fatal("Init() expected error for threshold <= 0")
+	}
+}
+
+func TestDeauthFloodRule_InitRejectsWindowBelowOneSecond(t *testing.T) {
+	rule := &DeauthFloodRule{}
+	err := rule.Init(config.DetectionConfig{
+		DeauthFlood: config.DeauthFloodConfig{
+			Threshold: 5,
+			Window:    500 * time.Millisecond,
+		},
+	})
+	if err == nil {
+		t.Fatal("Init() expected error for window below 1s")
+	}
+}
+
 func newDeauthFloodRuleForTest(t *testing.T, threshold int, window time.Duration) *DeauthFloodRule {
 	t.Helper()
 
@@ -144,7 +189,7 @@ func newDeauthFloodRuleForTest(t *testing.T, threshold int, window time.Duration
 	return rule
 }
 
-func deauthFrame(t *testing.T, ts time.Time, src string, bssid string) *parser.ParsedFrame {
+func deauthFrame(t *testing.T, ts time.Time, src, bssid string) *parser.ParsedFrame {
 	t.Helper()
 
 	return &parser.ParsedFrame{

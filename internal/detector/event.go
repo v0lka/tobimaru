@@ -18,6 +18,15 @@ const (
 	SeverityCritical
 )
 
+// Event type constants used by detection rules.
+const (
+	EventTypeDeauthFlood        = "deauth_flood"
+	EventTypeDisassocFlood      = "disassoc_flood"
+	EventTypeBeaconFlood        = "beacon_flood"
+	EventTypeEvilTwin           = "evil_twin"
+	EventTypeUnauthorizedDevice = "unauthorized_device"
+)
+
 // String returns the human-readable name of the severity level.
 func (s Severity) String() string {
 	switch s {

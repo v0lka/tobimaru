@@ -10,6 +10,8 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/parser"
 )
 
+// UnauthorizedDeviceRule detects unauthorized devices attempting to associate
+// with or probe protected access points.
 type UnauthorizedDeviceRule struct {
 	enabled      bool
 	alertOnProbe bool
@@ -24,10 +26,12 @@ type UnauthorizedDeviceRule struct {
 	callCount      uint64
 }
 
+// Name returns the rule identifier.
 func (r *UnauthorizedDeviceRule) Name() string {
-	return "unauthorized_device"
+	return EventTypeUnauthorizedDevice
 }
 
+// Init validates and applies configuration for this rule.
 func (r *UnauthorizedDeviceRule) Init(cfg config.DetectionConfig) error {
 	r.enabled = cfg.UnauthorizedDevice.Enabled
 	r.alertOnProbe = cfg.UnauthorizedDevice.AlertOnProbe
@@ -78,6 +82,7 @@ func (r *UnauthorizedDeviceRule) Init(cfg config.DetectionConfig) error {
 	return nil
 }
 
+// Process evaluates a parsed 802.11 frame against the unauthorized device detection rule.
 func (r *UnauthorizedDeviceRule) Process(frame *parser.ParsedFrame) []*SecurityEvent {
 	if !r.enabled {
 		return nil

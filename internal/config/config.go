@@ -46,18 +46,22 @@ type DetectionConfig struct {
 	EvilTwin           EvilTwinConfig           `yaml:"evil_twin"`
 	UnauthorizedDevice UnauthorizedDeviceConfig `yaml:"unauthorized_device"`
 }
+
+// DeauthFloodConfig holds configuration for the deauthentication flood detection rule.
 type DeauthFloodConfig struct {
 	Enabled   bool          `yaml:"enabled"`
 	Threshold int           `yaml:"threshold"`
 	Window    time.Duration `yaml:"window"`
 }
 
+// DisassocFloodConfig holds configuration for the disassociation flood detection rule.
 type DisassocFloodConfig struct {
 	Enabled   bool          `yaml:"enabled"`
 	Threshold int           `yaml:"threshold"`
 	Window    time.Duration `yaml:"window"`
 }
 
+// BeaconFloodConfig holds configuration for the beacon flood detection rule.
 type BeaconFloodConfig struct {
 	Enabled        bool          `yaml:"enabled"`
 	Threshold      int           `yaml:"threshold"`
@@ -65,6 +69,7 @@ type BeaconFloodConfig struct {
 	LearningPeriod time.Duration `yaml:"learning_period"`
 }
 
+// EvilTwinConfig holds configuration for the evil twin detection rule.
 type EvilTwinConfig struct {
 	Enabled        bool          `yaml:"enabled"`
 	ScoreThreshold int           `yaml:"score_threshold"`
@@ -73,6 +78,7 @@ type EvilTwinConfig struct {
 	MinBeacons     int           `yaml:"min_beacons"`
 }
 
+// UnauthorizedDeviceConfig holds configuration for the unauthorized device detection rule.
 type UnauthorizedDeviceConfig struct {
 	Enabled         bool          `yaml:"enabled"`
 	ProtectedBSSIDs []string      `yaml:"protected_bssids"`
