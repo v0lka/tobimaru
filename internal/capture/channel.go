@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/vkochetkov/tobimaru/internal/config"
@@ -30,8 +31,9 @@ type channelEntry struct {
 // ChannelHopper manages channel rotation for WiFi capture across multiple
 // frequency bands with configurable dwell times and weighted strategies.
 type ChannelHopper struct {
-	chs []channelEntry
-	idx int
+	chs     []channelEntry
+	idx     int
+	current atomic.Int32 // last channel returned by Next, for observability
 }
 
 // NewChannelHopper creates a ChannelHopper from the given configuration.
@@ -86,7 +88,16 @@ func (h *ChannelHopper) Reset() {
 func (h *ChannelHopper) Next() (int, time.Duration) {
 	entry := h.chs[h.idx]
 	h.idx = (h.idx + 1) % len(h.chs)
+	// WiFi channel numbers are well within int32 (max ~196), so the
+	// conversion below cannot overflow in practice.
+	h.current.Store(int32(entry.channel)) //nolint:gosec // bounded by valid channel range
 	return entry.channel, entry.dwell
+}
+
+// CurrentChannel returns the most recent channel that was selected by Next,
+// or 0 before the first call. Safe for concurrent use.
+func (h *ChannelHopper) CurrentChannel() int {
+	return int(h.current.Load())
 }
 
 // ChannelCount returns the number of channels in the hopping list.

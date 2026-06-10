@@ -52,7 +52,6 @@ make build-all
   │
   ├─► GOOS=linux   GOARCH=amd64  → bin/tobimaru-linux-amd64
   ├─► GOOS=linux   GOARCH=arm64  → bin/tobimaru-linux-arm64
-  ├─► GOOS=darwin  GOARCH=amd64  → bin/tobimaru-darwin-amd64
   └─► GOOS=darwin  GOARCH=arm64  → bin/tobimaru-darwin-arm64
 ```
 
@@ -69,7 +68,7 @@ Push/PR to main
   │     ├─ Setup Go 1.26
   │     └─ go test -race -cover ./...
   │
-  ├─► Job: build (matrix: 4 platforms)
+  ├─► Job: build (matrix: 3 platforms)
   │     ├─ Setup Go 1.26
   │     ├─ go build with ldflags for each GOOS/GOARCH
   │     └─ Upload binary as artifact
@@ -119,7 +118,7 @@ The `--version` flag is parsed in `cmd/tobimaru/main.go` and prints `version.Str
 | Target | Description |
 |--------|-------------|
 | `build` | Build binary for current platform |
-| `build-all` | Cross-compile for all 4 targets |
+| `build-all` | Cross-compile for all 3 targets |
 | `test` | Run tests with race detector and coverage |
 | `test-cover` | Run tests and open coverage report in browser |
 | `lint` | Run golangci-lint |

@@ -83,6 +83,17 @@ func (p *Pipeline) Capabilities() platform.Capabilities {
 	return p.caps
 }
 
+// CurrentChannel returns the channel currently being monitored. When channel
+// hopping is enabled it reports the channel last set by the hopper. When
+// hopping is disabled it returns 0 (the kernel keeps whatever channel the
+// adapter was on at startup, which the daemon does not track).
+func (p *Pipeline) CurrentChannel() int {
+	if p.hopper == nil {
+		return 0
+	}
+	return p.hopper.CurrentChannel()
+}
+
 // logCapabilities logs detected platform capabilities and any limitations.
 func logCapabilities(logger *slog.Logger, caps platform.Capabilities) {
 	logger.Info("platform capabilities",
@@ -128,6 +139,14 @@ func (p *Pipeline) Start(ctx context.Context) error {
 	ccfg := p.config.Monitor.Capture
 	handle, err := OpenCapture(iface, ccfg.Snaplen, *ccfg.Promiscuous, ccfg.Timeout, ccfg.BufferSize)
 	if err != nil {
+		// Best-effort revert of monitor mode so the interface doesn't stay
+		// stuck in a state that breaks the user's network connectivity.
+		disableCtx, cancel := context.WithTimeout(ctx, disableMonitorTimeout)
+		defer cancel()
+		if derr := p.monitor.DisableMonitor(disableCtx, iface); derr != nil {
+			p.logger.Warn("failed to revert monitor mode after capture open failure",
+				"interface", iface, "error", derr)
+		}
 		return fmt.Errorf("failed to open capture on %s: %w", iface, err)
 	}
 	p.handle = handle
