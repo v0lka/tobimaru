@@ -1,6 +1,6 @@
 # Tobimaru
 
-[![CI](https://github.com/v0lka/tobimaru/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/v0lkav/tobimaru/actions/workflows/ci.yml)
+[![CI](https://github.com/v0lka/tobimaru/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/v0lka/tobimaru/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/v0lka/tobimaru/branch/main/graph/badge.svg)](https://codecov.io/gh/v0lka/tobimaru)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
@@ -134,11 +134,11 @@ directly from the binary, without external tools like `htpasswd`.
 
 #### `detection` — Detection Engine
 
-| Field               | Type     | Default | Description                                              |
-| ------------------- | -------- | ------- | -------------------------------------------------------- |
+| Field               | Type     | Default | Description                                                                                       |
+| ------------------- | -------- | ------- | ------------------------------------------------------------------------------------------------- |
 | `enabled`           | bool     | `false` | Master switch (five concrete rules: deauth/disassoc/beacon flood, evil twin, unauthorized device) |
-| `dedup_window`      | duration | `30s`   | Suppress duplicate alerts                                |
-| `alert_buffer_size` | int      | `256`   | Buffered alert channel capacity                          |
+| `dedup_window`      | duration | `30s`   | Suppress duplicate alerts                                                                         |
+| `alert_buffer_size` | int      | `256`   | Buffered alert channel capacity                                                                   |
 
 #### `state` — Network State Tracking
 
@@ -270,15 +270,15 @@ make help        # List all targets
 
 Phases 0–5 of the mandatory portion are complete:
 
-| Phase | Status         | Description                                                                     |
-| ----- | -------------- | ------------------------------------------------------------------------------- |
-| 0     | ✅ Complete    | Foundation (config, logging, shutdown, version, CI)                             |
-| 1     | ✅ Complete    | Capture Engine (monitor mode, pcap, channel hopping, parsing)                   |
-| 2     | ✅ Complete    | Detection Engine (five rules with unit + pcap integration tests)                 |
-| 3     | ✅ Complete    | Network State & Storage (AP/client tracking, whitelist, SQLite)                 |
-| 4     | ✅ Complete    | REST API & Dashboard (chi router, SSE, React 19 SPA, auth)                      |
-| 5     | ✅ Complete    | Cross-platform (macOS support via CoreWLAN + BPF, Linux native, runtime capability detection) |
-| 6–12  | 📋 Planned     | EAPOL analysis, active countermeasures, internal monitoring, analytics, OpenWrt |
+| Phase | Status      | Description                                                                                   |
+| ----- | ----------- | --------------------------------------------------------------------------------------------- |
+| 0     | ✅ Complete | Foundation (config, logging, shutdown, version, CI)                                           |
+| 1     | ✅ Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing)                                 |
+| 2     | ✅ Complete | Detection Engine (five rules with unit + pcap integration tests)                              |
+| 3     | ✅ Complete | Network State & Storage (AP/client tracking, whitelist, SQLite)                               |
+| 4     | ✅ Complete | REST API & Dashboard (chi router, SSE, React 19 SPA, auth)                                    |
+| 5     | ✅ Complete | Cross-platform (macOS support via CoreWLAN + BPF, Linux native, runtime capability detection) |
+| 6–12  | 📋 Planned  | EAPOL analysis, active countermeasures, internal monitoring, analytics, OpenWrt               |
 
 See [`docs/development/wifi-watchdog-roadmap.md`](docs/development/wifi-watchdog-roadmap.md) for the full roadmap.
 
