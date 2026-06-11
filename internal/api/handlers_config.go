@@ -61,20 +61,10 @@ type mutableConfig struct {
 	DetectionDedupWindow time.Duration `json:"detection_dedup_window_ns"`
 }
 
-// configPatchRequest captures the JSON body shape accepted by PUT /api/config.
-// Each field is a pointer so callers can submit a partial patch.
-// (Kept as documentation; the handler uses a generic map for stricter
-// unsupported-field rejection.)
-//
-//nolint:unused // documents the wire format; runtime decoding uses map[string]any
-type configPatchRequest struct {
-	LogLevel             *string `json:"log_level,omitempty"`
-	DetectionEnabled     *bool   `json:"detection_enabled,omitempty"`
-	DetectionDedupWindow *string `json:"detection_dedup_window,omitempty"` // duration string, e.g. "30s"
-}
-
 // mutableKeys lists the JSON field names that PUT /api/config accepts. It is
 // the canonical source of truth for the unsupported_field validation below.
+// Each field maps to: log_level→string, detection_enabled→bool,
+// detection_dedup_window→duration string (e.g. "30s").
 var mutableKeys = []string{
 	"log_level",
 	"detection_enabled",

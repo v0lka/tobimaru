@@ -733,6 +733,79 @@ func TestEngineRegisterAfterRun(t *testing.T) {
 	drainAlerts(engine.Alerts())
 }
 
+func TestEngineSetEnabled(t *testing.T) {
+	engine := NewEngine(config.DetectionConfig{AlertBufferSize: 64})
+	if engine.Enabled() {
+		t.Error("expected disabled by default")
+	}
+	engine.SetEnabled(true)
+	if !engine.Enabled() {
+		t.Error("expected enabled after SetEnabled(true)")
+	}
+	engine.SetEnabled(false)
+	if engine.Enabled() {
+		t.Error("expected disabled after SetEnabled(false)")
+	}
+}
+
+func TestEngineRuleCount(t *testing.T) {
+	engine := NewEngine(config.DetectionConfig{AlertBufferSize: 64})
+	if n := engine.RuleCount(); n != 0 {
+		t.Errorf("got %d rules, want 0", n)
+	}
+	rule := &countingRule{name: "r"}
+	if err := engine.Register(rule); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if n := engine.RuleCount(); n != 1 {
+		t.Errorf("got %d rules, want 1", n)
+	}
+}
+
+func TestEngineSetDedupWindow(t *testing.T) {
+	engine := NewEngine(config.DetectionConfig{
+		AlertBufferSize: 64,
+		DedupWindow:     30 * time.Second,
+	})
+	if engine.DedupWindow() != 30*time.Second {
+		t.Errorf("got %v, want 30s", engine.DedupWindow())
+	}
+	engine.SetDedupWindow(10 * time.Second)
+	if engine.DedupWindow() != 10*time.Second {
+		t.Errorf("got %v, want 10s", engine.DedupWindow())
+	}
+	// Zero or negative should be ignored.
+	engine.SetDedupWindow(0)
+	if engine.DedupWindow() != 10*time.Second {
+		t.Errorf("got %v, want 10s (zero should be ignored)", engine.DedupWindow())
+	}
+	engine.SetDedupWindow(-1 * time.Second)
+	if engine.DedupWindow() != 10*time.Second {
+		t.Errorf("got %v, want 10s (negative should be ignored)", engine.DedupWindow())
+	}
+}
+
+func TestFrameTypeName(t *testing.T) {
+	tests := []struct {
+		ft   parser.FrameType
+		want string
+	}{
+		{parser.FrameTypeAssocReq, "assoc_req"},
+		{parser.FrameTypeReassocReq, "reassoc_req"},
+		{parser.FrameTypeAuth, "auth"},
+		{parser.FrameTypeProbeRequest, "probe_request"},
+		{parser.FrameTypeDeauth, "Deauthentication"},
+		{parser.FrameTypeBeacon, "Beacon"},
+		{parser.FrameTypeUnknown, "Unknown"},
+	}
+	for _, tc := range tests {
+		got := frameTypeName(tc.ft)
+		if got != tc.want {
+			t.Errorf("frameTypeName(%v) = %q, want %q", tc.ft, got, tc.want)
+		}
+	}
+}
+
 func TestEngineRunIdempotent(t *testing.T) {
 	engine := NewEngine(config.DetectionConfig{
 		Enabled:         true,
@@ -759,5 +832,32 @@ func BenchmarkDedupKey(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = dedupKey(ev)
+	}
+}
+
+func TestFloodRuleCleanupStale(t *testing.T) {
+	r := newFloodRule("test", parser.FrameTypeDeauth, SeverityCritical, 10, time.Second)
+
+	// Populate tracker with a mix of stale and fresh entries.
+	now := time.Now()
+	stale := now.Add(-time.Hour) // well beyond maxAge = window * 5 = 5s
+
+	r.tracker["fresh"] = &floodTracker{lastSeen: now}
+	r.tracker["stale"] = &floodTracker{lastSeen: stale}
+	r.tracker["also_stale"] = &floodTracker{lastSeen: stale.Add(-time.Minute)}
+
+	r.cleanupStale(now)
+
+	if _, ok := r.tracker["fresh"]; !ok {
+		t.Error("fresh entry should remain")
+	}
+	if _, ok := r.tracker["stale"]; ok {
+		t.Error("stale entry should be removed")
+	}
+	if _, ok := r.tracker["also_stale"]; ok {
+		t.Error("also_stale entry should be removed")
+	}
+	if len(r.tracker) != 1 {
+		t.Errorf("expected 1 remaining entry, got %d", len(r.tracker))
 	}
 }

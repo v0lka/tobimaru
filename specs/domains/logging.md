@@ -11,11 +11,17 @@ Creates a configured `*slog.Logger` from a `LogConfig` struct, mapping string-ba
 
 ## Core Types
 
-No custom types exported. The package exposes a single factory function:
+No custom types exported. The package exposes a factory function and runtime level accessors:
 
 ```go
 func New(cfg config.LogConfig) *slog.Logger
+func SetLevel(s string) bool
+func Level() string
 ```
+
+- `New()` creates a logger backed by a package-level `slog.LevelVar`. All loggers share this LevelVar, enabling runtime adjustments.
+- `SetLevel(s)` atomically updates the effective log level. Accepts `"debug"`, `"info"`, `"warn"`, `"error"`. Returns `false` for unknown strings.
+- `Level()` returns the current effective level as a string.
 
 ## Behavior
 

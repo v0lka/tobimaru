@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadReaderValidConfig(t *testing.T) {
@@ -150,11 +151,13 @@ monitor:
 	if cfg.Monitor.ChannelHopping.Dwell != DefaultDwellTime {
 		t.Errorf("got dwell %v, want %v", cfg.Monitor.ChannelHopping.Dwell, DefaultDwellTime)
 	}
-	if len(cfg.Monitor.ChannelHopping.Channels2GHz) != 13 {
-		t.Errorf("got %d 2.4 GHz channels, want 13", len(cfg.Monitor.ChannelHopping.Channels2GHz))
+	// Channel lists are not populated at config-load time — they are
+	// auto-detected from hardware at pipeline creation (nil = "auto").
+	if cfg.Monitor.ChannelHopping.Channels2GHz != nil {
+		t.Errorf("expected nil Channels2GHz (auto-detect), got %v", cfg.Monitor.ChannelHopping.Channels2GHz)
 	}
-	if len(cfg.Monitor.ChannelHopping.Channels5GHz) == 0 {
-		t.Error("expected non-empty 5 GHz channels")
+	if cfg.Monitor.ChannelHopping.Channels5GHz != nil {
+		t.Errorf("expected nil Channels5GHz (auto-detect), got %v", cfg.Monitor.ChannelHopping.Channels5GHz)
 	}
 }
 
@@ -585,9 +588,137 @@ api:
 }
 
 func TestAPIAcceptsRealBcryptHash(t *testing.T) {
-	// $2a$ prefix and 60-char total length — enough for the syntactic check.
-	yaml := "\nmonitor:\n  interface: wlan0\napi:\n  enabled: true\n  listen: \"127.0.0.1:8080\"\n  auth:\n    enabled: true\n    admin_password_hash: \"$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345\"\n"
+	// Standard bcrypt hash is exactly 60 characters: $2a$10$ + 53-char salt+hash.
+	yaml := "\nmonitor:\n  interface: wlan0\napi:\n  enabled: true\n  listen: \"127.0.0.1:8080\"\n  auth:\n    enabled: true\n    admin_password_hash: \"$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0\"\n"
 	if _, err := LoadReader(strings.NewReader(yaml)); err != nil {
 		t.Errorf("got %v, want no error", err)
+	}
+}
+
+func TestDefaultChannels2GHz(t *testing.T) {
+	ch := DefaultChannels2GHz()
+	if len(ch) != 13 {
+		t.Errorf("expected 13 channels, got %d", len(ch))
+	}
+	if ch[0] != 1 || ch[12] != 13 {
+		t.Errorf("expected channels 1..13, got %v..%v", ch[0], ch[12])
+	}
+}
+
+func TestDefaultChannels5GHz(t *testing.T) {
+	ch := DefaultChannels5GHz()
+	if len(ch) != 9 {
+		t.Errorf("expected 9 channels, got %d", len(ch))
+	}
+	if ch[0] != 36 {
+		t.Errorf("expected first channel 36, got %d", ch[0])
+	}
+}
+
+// TestStorageValidation_NegativeMaxSnapshots verifies negative max_snapshots is rejected.
+func TestStorageValidation_NegativeMaxSnapshots(t *testing.T) {
+	// Bypass defaults by constructing Config directly.
+	cfg := &Config{
+		Monitor: MonitorConfig{Interface: "wlan0",
+			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
+		},
+		Storage: StorageConfig{Enabled: true, Path: "/tmp/test.db", MaxSnapshots: -1, MaxEvents: 100},
+	}
+	err := validate(cfg)
+	if !errors.Is(err, ErrInvalidMaxSnapshots) {
+		t.Errorf("got %v, want ErrInvalidMaxSnapshots", err)
+	}
+}
+
+// TestStorageValidation_NegativeMaxEvents verifies negative max_events is rejected.
+func TestStorageValidation_NegativeMaxEvents(t *testing.T) {
+	cfg := &Config{
+		Monitor: MonitorConfig{Interface: "wlan0",
+			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
+		},
+		Storage: StorageConfig{Enabled: true, Path: "/tmp/test.db", MaxSnapshots: 5, MaxEvents: -1},
+	}
+	err := validate(cfg)
+	if !errors.Is(err, ErrInvalidMaxEvents) {
+		t.Errorf("got %v, want ErrInvalidMaxEvents", err)
+	}
+}
+
+// TestAPIValidation_InvalidTimeout verifies zero/negative API timeouts are rejected.
+func TestAPIValidation_InvalidTimeout(t *testing.T) {
+	cfg := &Config{
+		Monitor: MonitorConfig{Interface: "wlan0",
+			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
+		},
+		API: APIConfig{Enabled: true, Listen: "127.0.0.1:8080",
+			ReadTimeout: 0, WriteTimeout: 0, IdleTimeout: 0, ShutdownTimeout: 0},
+	}
+	err := validate(cfg)
+	if !errors.Is(err, ErrInvalidAPITimeout) {
+		t.Errorf("got %v, want ErrInvalidAPITimeout", err)
+	}
+}
+
+// TestAPIAuth_InvalidUserHash verifies bad user password hash is rejected.
+func TestAPIAuth_InvalidUserHash(t *testing.T) {
+	cfg := &Config{
+		Monitor: MonitorConfig{Interface: "wlan0",
+			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
+		},
+		API: APIConfig{Enabled: true, Listen: "127.0.0.1:8080",
+			ReadTimeout: time.Second, WriteTimeout: time.Second,
+			IdleTimeout: time.Second, ShutdownTimeout: time.Second,
+			Auth: AuthConfig{
+				Enabled:           true,
+				AdminPasswordHash: "$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+				UserPasswordHash:  "not-a-bcrypt-hash",
+			},
+		},
+	}
+	err := validate(cfg)
+	if !errors.Is(err, ErrInvalidPasswordHash) {
+		t.Errorf("got %v, want ErrInvalidPasswordHash", err)
+	}
+}
+
+// TestLooksLikeBcrypt verifies bcrypt hash syntax detection.
+func TestLooksLikeBcrypt(t *testing.T) {
+	// Wrong length.
+	if looksLikeBcrypt("short") {
+		t.Error("short string should not look like bcrypt")
+	}
+	if looksLikeBcrypt("$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ00") {
+		t.Error("61-char string should not look like bcrypt")
+	}
+	// Wrong prefix.
+	if looksLikeBcrypt("$2x$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0") {
+		t.Error("$2x$ prefix should not look like bcrypt")
+	}
+	// Valid prefixes.
+	if !looksLikeBcrypt("$2a$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0") {
+		t.Error("$2a$ prefix should look like bcrypt")
+	}
+	if !looksLikeBcrypt("$2b$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0") {
+		t.Error("$2b$ prefix should look like bcrypt")
+	}
+	if !looksLikeBcrypt("$2y$10$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0") {
+		t.Error("$2y$ prefix should look like bcrypt")
+	}
+}
+
+func TestDefaultPrimaryChannels(t *testing.T) {
+	ch := DefaultPrimaryChannels()
+	if len(ch) != 3 {
+		t.Errorf("expected 3 channels, got %d", len(ch))
+	}
+	expected := []int{1, 6, 11}
+	for i, v := range expected {
+		if ch[i] != v {
+			t.Errorf("channel[%d] = %d, want %d", i, ch[i], v)
+		}
 	}
 }

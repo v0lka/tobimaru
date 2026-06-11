@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -174,10 +175,12 @@ func (r *SQLiteRepository) ListEvents(ctx context.Context, filter EventFilter) (
 	query, args := buildEventQuery("SELECT id, timestamp, event_type, severity, src_mac, dst_mac, bssid, ssid, channel, rssi, frame_count, duration_ns, metadata, description FROM events", filter)
 	query += " ORDER BY timestamp DESC"
 	if filter.Limit > 0 {
-		query += fmt.Sprintf(" LIMIT %d", filter.Limit)
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
 	}
 	if filter.Offset > 0 {
-		query += fmt.Sprintf(" OFFSET %d", filter.Offset)
+		query += " OFFSET ?"
+		args = append(args, filter.Offset)
 	}
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -523,7 +526,7 @@ func buildEventQuery(base string, filter EventFilter) (query string, args []any)
 	return query, args
 }
 
-func scanEvent(rows *sql.Rows) (*detector.SecurityEvent, error) {
+func scanEvent(rows *sql.Rows) (*detector.SecurityEvent, error) { //nolint:gocyclo // MAC parsing + metadata is linear decoding, not branching complexity
 	var (
 		id                                       int64
 		tsStr, eventType, description            string
@@ -579,7 +582,12 @@ func scanEvent(rows *sql.Rows) (*detector.SecurityEvent, error) {
 		ev.SSID = ssid.String
 	}
 	if metadataStr.Valid && metadataStr.String != "" {
-		_ = json.Unmarshal([]byte(metadataStr.String), &ev.Metadata)
+		if err := json.Unmarshal([]byte(metadataStr.String), &ev.Metadata); err != nil {
+			slog.Debug("storage: corrupted event metadata in database",
+				"event_id", id,
+				"error", err,
+			)
+		}
 	}
 
 	return ev, nil

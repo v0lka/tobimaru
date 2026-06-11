@@ -11,17 +11,17 @@
 ## Граф зависимостей между фазами
 
 ```
-Phase 0: Foundation
+Phase 0: Foundation [DONE]
     │
-    ├──► Phase 1: Capture Engine ──────► Phase 2: Detection Engine
+    ├──► Phase 1: Capture Engine [DONE] ──► Phase 2: Detection Engine [DONE]
     │         │                                │
     │         │                                ▼
-    │         └─────────────────────► Phase 3: State & Storage
+    │         └─────────────────────► Phase 3: State & Storage [DONE]
     │                                          │
     │                                          ▼
-    │                                   Phase 4: REST API & Dashboard
+    │                                   Phase 4: REST API & Dashboard [DONE]
     │                                          │
-    ├──► Phase 5: Cross-platform (macOS) ◄─────┘
+    ├──► Phase 5: Cross-platform (macOS) [DONE] ◄┘
     │
     │    ═══════════════════════ Обязательная часть завершена ═══════════════════
     │
@@ -46,7 +46,7 @@ Phase 0: Foundation
 | --- | ------------------------------------------------------------------------ | ---------- | ------------ |
 | 0.1 | Инициализация Go-модуля, структура каталогов (cmd/, internal/, configs/) | —          | S            |
 | 0.2 | Настройка линтера (golangci-lint) и форматирования                       | 0.1        | S            |
-| 0.3 | CI pipeline: lint, test, build для Linux amd64/arm64 и macOS arm64/amd64 | 0.1, 0.2   | M            |
+| 0.3 | CI pipeline: lint, test, build для Linux amd64/arm64 и macOS arm64 | 0.1, 0.2   | M            |
 | 0.4 | Makefile / taskfile с целями build, test, lint, run                      | 0.1        | S            |
 | 0.5 | Конфигурационная подсистема: загрузка YAML, валидация, defaults          | 0.1        | M            |
 | 0.6 | Structured logging (slog): инициализация, уровни, формат вывода          | 0.1        | S            |
@@ -55,7 +55,7 @@ Phase 0: Foundation
 
 ### Definition of Done
 
-- `go build ./...` собирает бинарник для четырёх платформ без ошибок.
+- `go build ./...` собирает бинарник для трёх платформ без ошибок.
 - `golangci-lint run` проходит без замечаний.
 - CI pipeline проходит на push/PR.
 - Конфигурация загружается из YAML с валидацией обязательных полей.
@@ -91,7 +91,7 @@ Phase 0: Foundation
 
 ---
 
-## Фаза 2: Detection Engine (движок обнаружения атак)
+## [DONE] ~~Фаза 2: Detection Engine (движок обнаружения атак)~~
 
 Реализация правил детектирования обязательных типов атак на основе потока parsed frames из Phase 1.
 
@@ -101,13 +101,13 @@ Phase 0: Foundation
 | ---------- | ----------------------------------------------------------------------------------------- | ---------- | ------------ |
 | 2.1 [DONE] | ~~Абстракция Rule: интерфейс детектора, lifecycle (init, process frame, emit alert)~~     | 1.7        | M            |
 | 2.2 [DONE] | ~~Detection Engine: агрегатор правил, dispatch, приоритизация, deduplication~~            | 2.1        | M            |
-| 2.3        | Правило: Deauthentication flood (скользящее окно, порог за период)                        | 2.1        | M            |
-| 2.4        | Правило: Disassociation flood (аналогично deauth)                                         | 2.3        | S            |
-| 2.5        | Правило: Evil Twin AP (дублирование SSID, несовпадение BSSID/channel/IE fingerprint)      | 2.1        | L            |
-| 2.6        | Правило: Beacon flood (резкий рост уникальных BSSID за период)                            | 2.1        | M            |
-| 2.7        | Правило: Unauthorized device (MAC не в whitelist, ассоциация с защищаемой AP)             | 2.1        | M            |
+| 2.3 [DONE] | ~~Правило: Deauthentication flood (скользящее окно, порог за период)~~                    | 2.1        | M            |
+| 2.4 [DONE] | ~~Правило: Disassociation flood (аналогично deauth)~~                                     | 2.3        | S            |
+| 2.5 [DONE] | ~~Правило: Evil Twin AP (дублирование SSID, несовпадение BSSID/channel/IE fingerprint)~~  | 2.1        | L            |
+| 2.6 [DONE] | ~~Правило: Beacon flood (резкий рост уникальных BSSID за период)~~                        | 2.1        | M            |
+| 2.7 [DONE] | ~~Правило: Unauthorized device (MAC не в whitelist, ассоциация с защищаемой AP)~~         | 2.1        | M            |
 | 2.8 [DONE] | ~~Модель событий безопасности: severity levels (info/warning/critical), metadata schema~~ | 2.2        | S            |
-| 2.9        | Тестирование: генераторы вредоносных pcap-файлов для каждого типа атаки                   | 2.3–2.7    | L            |
+| 2.9 [DONE] | ~~Тестирование: генераторы вредоносных pcap-файлов для каждого типа атаки~~               | 2.3–2.7    | L            |
 
 ### Definition of Done
 
@@ -148,7 +148,7 @@ Phase 0: Foundation
 
 ---
 
-## [DONE] Фаза 4: REST API и веб-дашборд
+## [DONE] ~~Фаза 4: REST API и веб-дашборд~~
 
 Предоставление данных через HTTP API и встроенный веб-интерфейс для мониторинга.
 
@@ -198,9 +198,9 @@ Phase 0: Foundation
 
 ### Definition of Done
 
-- Бинарник собирается и запускается на macOS arm64 и amd64.
+- Бинарник собирается и запускается на macOS arm64.
 - Агент корректно определяет ограничения macOS и адаптирует поведение.
-- Monitor mode активируется (с ограничениями); fреймы захватываются и парсятся.
+- Monitor mode активируется (с ограничениями); фреймы захватываются и парсятся.
 - Injection-функции отключены без ошибок.
 - API /status корректно отражает capabilities macOS.
 - macOS build проходит CI.

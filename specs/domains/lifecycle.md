@@ -19,10 +19,12 @@ type Hook struct {
 }
 
 type Manager struct {
-    mu       sync.Mutex
-    hooks    []Hook
-    signals  []os.Signal
-    stopFunc context.CancelFunc // releases signal notification resources
+    mu           sync.Mutex
+    hooks        []Hook
+    signals      []os.Signal
+    stopFunc     context.CancelFunc // releases signal notification resources
+    shutdownOnce sync.Once          // ensures Shutdown runs exactly once
+    shutdownErr  error              // captured error from first invocation
 }
 ```
 
@@ -64,26 +66,28 @@ main goroutine blocks on: <-signalCtx.Done()
 ### Shutdown
 
 ```
-sm.Shutdown(shutdownCtx)  // shutdownCtx has 30-second timeout
+sm.Shutdown(shutdownCtx)  // shutdownCtx has 30-second overall timeout
   │
   ├─► Copy hooks slice (thread-safe under mutex)
   │
-  └─► For each hook in REVERSE registration order (LIFO):
+  └─► For each hook in REVERSE registration order (LIFO) via slices.Backward:
         │
+        ├─► Create per-hook context with 5s timeout: context.WithTimeout(ctx, 5*time.Second)
         ├─► Launch goroutine: h.Fn()
         ├─► Wait on select:
-        │     ├─ hook returns error → accum in errs, continue
+        │     ├─ hook returns error → accum in errs, continue to next hook
         │     ├─ hook returns nil     → continue to next hook
-        │     └─ ctx.Done()          → accum ctx.Err(), return immediately
+        │     └─ per-hook ctx.Done() → accum ctx.Err(), continue to next hook
         │
         └─► After all hooks: return errors.Join(errs...)
 ```
 
 ## Invariants
 
-- Hooks always execute in **reverse registration order** (LIFO): last registered runs first
-- Each hook runs in its own goroutine with a deadline from the parent context
-- If the context expires during hook execution, `Shutdown` returns immediately — remaining hooks are NOT executed
+- Hooks always execute in **reverse registration order** (LIFO) via `slices.Backward`: last registered runs first
+- Each hook is given a per-hook sub-context with a 5-second timeout (`context.WithTimeout`), independent of the parent deadline — a slow hook does NOT starve subsequent hooks
+- If a per-hook timeout expires, the error is accumulated and execution continues to the next hook
+- `Shutdown()` is idempotent via `sync.Once` — subsequent calls return the cached result of the first invocation
 - Errors from hooks are aggregated with `errors.Join` — a failure in one hook does NOT prevent subsequent hooks from running
 - `Register()` is thread-safe (protected by `sync.Mutex`)
 - Default signals are `os.Interrupt` (SIGINT) and `syscall.SIGTERM`

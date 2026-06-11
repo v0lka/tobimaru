@@ -7,7 +7,7 @@ Loads, validates, and applies defaults to the YAML configuration file. Provides 
 ## Key Files
 
 - `internal/config/config.go` — Config structs, `Load()` and `LoadReader()` functions, sentinel errors, constants
-- `internal/config/defaults.go` — `applyDefaults()`, default channel lists (`DefaultChannels2GHz`, `DefaultChannels5GHz`)
+- `internal/config/defaults.go` — `applyDefaults()`, default channel lists (`DefaultChannels2GHz`, `DefaultChannels5GHz`, `DefaultPrimaryChannels`) used as fallback at pipeline creation
 - `internal/config/validation.go` — `validate()`, `IsValidationError()`, whitelist-based enum validation
 - `internal/config/config_test.go` — unit tests covering happy path, missing required fields, invalid enums, unknown fields, defaults
 - `configs/tobimaru.yaml` — annotated sample configuration
@@ -54,9 +54,9 @@ type ChannelHoppingConfig struct {
 }
 
 type WeightedDwellConfig struct {
-    Enabled         bool    `yaml:"enabled"`          // enable weighted dwell
-    PrimaryChannels []int   `yaml:"primary_channels"` // channels to spend more time on
-    Multiplier      float64 `yaml:"multiplier"`       // time multiplier for primary channels
+    Enabled         *bool   `yaml:"enabled"          json:"enabled,omitempty"` // enable weighted dwell (default true)
+    PrimaryChannels []int   `yaml:"primary_channels" json:"primary_channels"`  // channels to spend more time on
+    Multiplier      float64 `yaml:"multiplier"       json:"multiplier"`        // time multiplier for primary channels
 }
 
 type APIConfig struct {
@@ -75,10 +75,11 @@ type CORSConfig struct {
 }
 
 type AuthConfig struct {
-    Enabled           bool          `yaml:"enabled"`             // toggle authentication
-    SessionTTL        time.Duration `yaml:"session_ttl"`         // session token lifetime
-    AdminPasswordHash string        `yaml:"admin_password_hash"` // bcrypt hash of admin password
-    UserPasswordHash  string        `yaml:"user_password_hash"`  // bcrypt hash of user password (optional)
+    Enabled           bool          `yaml:"enabled"             json:"enabled"`              // toggle authentication
+    SessionTTL        time.Duration `yaml:"session_ttl"         json:"session_ttl"`          // session token lifetime
+    AdminPasswordHash string        `yaml:"admin_password_hash" json:"admin_password_hash"`  // bcrypt hash of admin password
+    UserPasswordHash  string        `yaml:"user_password_hash"  json:"user_password_hash"`   // bcrypt hash of user password (optional)
+    CookieSecure      *bool         `yaml:"cookie_secure"       json:"cookie_secure,omitempty"` // Secure cookie attr (default true)
 }
 ```
 
@@ -91,11 +92,17 @@ var (
     ErrInvalidSnaplen    = errors.New("monitor.capture.snaplen must be positive")
     ErrInvalidBufferSize = errors.New("monitor.capture.buffer_size must be positive")
     ErrInvalidTimeout    = errors.New("monitor.capture.timeout must be positive")
-    ErrInvalidStateTTL         = errors.New("state.ttl must be positive when state is enabled")
-    ErrInvalidSweepInterval    = errors.New("state.sweep_interval must be positive when state is enabled")
+    ErrInvalidStateTTL         = errors.New("state.ttl must be positive when state is enabled (0 uses default; negative is rejected)")
+    ErrInvalidSweepInterval    = errors.New("state.sweep_interval must be positive when state is enabled (0 uses default; negative is rejected)")
     ErrInvalidStoragePath      = errors.New("storage.path is required when storage is enabled")
-    ErrInvalidSnapshotInterval = errors.New("storage.snapshot_interval must be positive when storage is enabled")
-    ErrInvalidLearningDuration = errors.New("whitelist.auto_learning.duration must be positive when enabled")
+    ErrInvalidSnapshotInterval = errors.New("storage.snapshot_interval must be positive when storage is enabled (0 uses default; negative is rejected)")
+    ErrInvalidMaxSnapshots     = errors.New("storage.max_snapshots must be >= 0 when storage is enabled (0 uses default; negative is rejected)")
+    ErrInvalidMaxEvents        = errors.New("storage.max_events must be >= 0 when storage is enabled (0 uses default; negative is rejected)")
+    ErrInvalidLearningDuration = errors.New("whitelist.auto_learning.duration must be positive when enabled (0 uses default; negative is rejected)")
+    ErrInvalidAPIListen        = errors.New("api.listen must be a valid host:port when api is enabled")
+    ErrInvalidAPITimeout       = errors.New("api.{read,write,idle,shutdown}_timeout must be positive when api is enabled")
+    ErrMissingAdminHash        = errors.New("api.auth.admin_password_hash is required when api.auth is enabled")
+    ErrInvalidPasswordHash     = errors.New("api.auth password hash must look like a bcrypt hash ($2a$..., $2b$..., or $2y$...)")
 )
 
 type ValidationError struct {
@@ -110,21 +117,48 @@ const (
     DefaultLogFormat       = "text"
     DefaultSnaplen         = 65535
     DefaultBufferSize      = 2097152 // 2 MB
+    DefaultTimeout         = 100 * time.Millisecond
     DefaultFrameBufferSize = 1024
     DefaultPromiscuous     = true
-    DefaultTimeout         = 100 * time.Millisecond
     DefaultDwellTime       = 300 * time.Millisecond
     DefaultWeightedDwell   = true
     DefaultMultiplier      = 2.5
     DefaultDedupWindow     = 30 * time.Second
     DefaultAlertBufferSize = 256
+
+    DefaultDeauthFloodThreshold = 10
+    DefaultDeauthFloodWindow    = 10 * time.Second
+
+    DefaultDisassocFloodThreshold = 10
+    DefaultDisassocFloodWindow    = 10 * time.Second
+
+    DefaultBeaconFloodThreshold      = 50
+    DefaultBeaconFloodWindow         = 10 * time.Second
+    DefaultBeaconFloodLearningPeriod = 60 * time.Second
+
+    DefaultEvilTwinScoreThreshold = 80
+    DefaultEvilTwinStaleTimeout   = 5 * time.Minute
+    DefaultEvilTwinLearningPeriod = 60 * time.Second
+    DefaultEvilTwinMinBeacons     = 3
+
+    DefaultUnauthorizedDeviceCooldown = 5 * time.Minute
+
     DefaultStateTTL           = 10 * time.Minute
     DefaultStateSweepInterval = 1 * time.Minute
+
     DefaultAutoLearningDuration = 15 * time.Minute
+
     DefaultStoragePath         = "tobimaru.db"
     DefaultSnapshotInterval    = 5 * time.Minute
     DefaultMaxSnapshots        = 288
     DefaultMaxEvents           = 100000
+
+    DefaultAPIListen          = "127.0.0.1:8080"
+    DefaultAPIReadTimeout     = 15 * time.Second
+    DefaultAPIWriteTimeout    = 30 * time.Second
+    DefaultAPIIdleTimeout     = 60 * time.Second
+    DefaultAPIShutdownTimeout = 5 * time.Second
+    DefaultAPISessionTTL      = 24 * time.Hour
 )
 ```
 
@@ -151,8 +185,6 @@ config.Load(path)
   │     │     ├─ monitor.capture.promiscuous         → DefaultPromiscuous     (if nil)
   │     │     ├─ monitor.capture.timeout             → DefaultTimeout         (if 0)
   │     │     ├─ monitor.channel_hopping.dwell       → DefaultDwellTime       (if 0)
-  │     │     ├─ monitor.channel_hopping.channels_2ghz → DefaultChannels2GHz() (if nil)
-  │     │     ├─ monitor.channel_hopping.channels_5ghz → DefaultChannels5GHz() (if nil)
   │     │     ├─ monitor.channel_hopping.weighted_dwell.multiplier → DefaultMultiplier (if 0)
 │     │     ├─ detection.dedup_window    → DefaultDedupWindow     (if 0)
 │     │     ├─ detection.alert_buffer_size → DefaultAlertBufferSize (if 0)
@@ -192,6 +224,7 @@ config.Load(path)
 - `IsValidationError(err)` returns `true` for `*ValidationError` via `errors.As`
 - Defaults are applied only when the corresponding field is the Go zero value (0 for ints and durations, nil for slices, empty string for strings)
 - Because `applyDefaults` runs before `validate`, an explicit `0` (or empty string) for a field that has a default is silently replaced with the default. The "must be positive" validation errors therefore only fire on explicitly negative values that survive defaulting.
+- Channel lists (`channels_2ghz`, `channels_5ghz`, `primary_channels`) are an exception — they are left nil by `applyDefaults` and populated at pipeline creation from hardware-supported channels or built-in defaults. This ensures the hopper only attempts channels the adapter actually supports.
 
 ## Configuration
 
@@ -207,10 +240,10 @@ config.Load(path)
 | `monitor.capture.timeout` | `CaptureConfig.Timeout` | `time.Duration` | `100ms` | No |
 | `monitor.channel_hopping.enabled` | `ChannelHoppingConfig.Enabled` | `bool` | — | No |
 | `monitor.channel_hopping.dwell` | `ChannelHoppingConfig.Dwell` | `time.Duration` | `300ms` | No |
-| `monitor.channel_hopping.channels_2ghz` | `ChannelHoppingConfig.Channels2GHz` | `[]int` | `[1..13]` | No |
-| `monitor.channel_hopping.channels_5ghz` | `ChannelHoppingConfig.Channels5GHz` | `[]int` | UNII-1/2/2e/3 | No |
+| `monitor.channel_hopping.channels_2ghz` | `ChannelHoppingConfig.Channels2GHz` | `[]int` | auto (hardware or 1–13) | No |
+| `monitor.channel_hopping.channels_5ghz` | `ChannelHoppingConfig.Channels5GHz` | `[]int` | auto (hardware or UNII-1/3) | No |
 | `monitor.channel_hopping.include_5ghz` | `ChannelHoppingConfig.Include5GHz` | `bool` | `false` | No |
-| `monitor.channel_hopping.weighted_dwell.enabled` | `WeightedDwellConfig.Enabled` | `bool` | — | No |
+| `monitor.channel_hopping.weighted_dwell.enabled` | `WeightedDwellConfig.Enabled` | `*bool` | `true` | No |
 | `monitor.channel_hopping.weighted_dwell.primary_channels` | `WeightedDwellConfig.PrimaryChannels` | `[]int` | `[1, 6, 11]` | No |
 | `monitor.channel_hopping.weighted_dwell.multiplier` | `WeightedDwellConfig.Multiplier` | `float64` | `2.5` | No |
 | `detection.enabled` | `DetectionConfig.Enabled` | `bool` | `false` | No |
@@ -233,10 +266,11 @@ config.Load(path)
 | `api.idle_timeout` | `APIConfig.IdleTimeout` | `time.Duration` | `60s` | No |
 | `api.shutdown_timeout` | `APIConfig.ShutdownTimeout` | `time.Duration` | `5s` | No |
 | `api.cors.allowed_origins` | `CORSConfig.AllowedOrigins` | `[]string` | `[]` (same-origin) | No |
-| `api.auth.enabled` | `AuthConfig.Enabled` | `bool` | `true` | No |
+| `api.auth.enabled` | `AuthConfig.Enabled` | `bool` | `false` | No |
 | `api.auth.session_ttl` | `AuthConfig.SessionTTL` | `time.Duration` | `24h` | No |
 | `api.auth.admin_password_hash` | `AuthConfig.AdminPasswordHash` | `string` | — | When auth enabled |
 | `api.auth.user_password_hash` | `AuthConfig.UserPasswordHash` | `string` | `""` (disabled) | No |
+| `api.auth.cookie_secure` | `AuthConfig.CookieSecure` | `*bool` | `true` | No |
 
 ## Extension Points
 

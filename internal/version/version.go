@@ -4,9 +4,10 @@ package version
 import "fmt"
 
 // Build information, injected at build time via ldflags.
-// These variables are effectively immutable after process startup; production
-// builds set them via -X linker flags and never modify them again. SetVersion
-// exists for tests only and is NOT safe for concurrent use.
+// These variables are set once at process startup via -X linker flags and
+// MUST NOT be modified afterwards. The API server reads them concurrently
+// in buildStatusResponse; any mutation after startup is a data race.
+// SetVersion exists for tests only and is NOT safe for concurrent use.
 var (
 	Version = "dev"
 	Commit  = "unknown"

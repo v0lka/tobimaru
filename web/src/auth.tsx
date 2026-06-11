@@ -38,14 +38,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuthRequired(!!status.auth?.enabled);
         if (!status.auth?.enabled) {
           setRole("admin");
-        } else {
-          // Probe whether session cookie is still valid.
-          try {
-            await api.aps();
-            if (!cancelled) setRole("user");
-          } catch {
-            /* not authenticated */
-          }
+          return;
+        }
+        // Prefer the role exposed by /api/status when a valid session
+        // cookie is presented; this preserves admin-only UI across reloads.
+        if (status.auth.role === "admin" || status.auth.role === "user") {
+          setRole(status.auth.role);
+          return;
+        }
+        // Fallback: probe whether session cookie is still valid (older
+        // backends without the role field).
+        try {
+          await api.aps();
+          if (!cancelled) setRole("user");
+        } catch {
+          /* not authenticated */
         }
       } finally {
         if (!cancelled) setAuthChecked(true);

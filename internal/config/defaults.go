@@ -9,24 +9,33 @@ func DefaultChannels2GHz() []int {
 	return channels
 }
 
-// DefaultChannels5GHz returns the list of 5 GHz WiFi channels (non-DFS + DFS, FCC domain).
+// DefaultChannels5GHz returns the list of 5 GHz WiFi channels commonly
+// supported on macOS adapters (non-DFS, UNII-1 + UNII-3). Used as a
+// fallback when the platform cannot enumerate hardware-supported channels
+// (e.g., Linux where SupportedChannels returns nil).
 func DefaultChannels5GHz() []int {
 	return []int{
 		36, 40, 44, 48, // UNII-1
-		52, 56, 60, 64, // UNII-2 (DFS)
-		100, 104, 108, 112, 116, // UNII-2e (DFS)
-		120, 124, 128, 132, 136, 140, 144, // UNII-2e/UNII-3 (DFS)
 		149, 153, 157, 161, 165, // UNII-3
 	}
 }
 
+// DefaultPrimaryChannels returns the non-overlapping 2.4 GHz channels used as
+// primary channels for weighted dwell time.
+func DefaultPrimaryChannels() []int {
+	return []int{1, 6, 11}
+}
+
 func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value checks, not branching complexity
+	// Log defaults.
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = DefaultLogLevel
 	}
 	if cfg.Log.Format == "" {
 		cfg.Log.Format = DefaultLogFormat
 	}
+
+	// Capture defaults.
 	if cfg.Monitor.Capture.Snaplen == 0 {
 		cfg.Monitor.Capture.Snaplen = DefaultSnaplen
 	}
@@ -39,27 +48,69 @@ func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value chec
 	if cfg.Monitor.Capture.Timeout == 0 {
 		cfg.Monitor.Capture.Timeout = DefaultTimeout
 	}
-	if cfg.Monitor.ChannelHopping.Dwell == 0 {
-		cfg.Monitor.ChannelHopping.Dwell = DefaultDwellTime
-	}
-	if cfg.Monitor.ChannelHopping.Channels2GHz == nil {
-		cfg.Monitor.ChannelHopping.Channels2GHz = DefaultChannels2GHz()
-	}
-	if cfg.Monitor.ChannelHopping.Channels5GHz == nil {
-		cfg.Monitor.ChannelHopping.Channels5GHz = DefaultChannels5GHz()
-	}
-	if cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier == 0 {
-		cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier = DefaultMultiplier
-	}
 	if cfg.Monitor.Capture.Promiscuous == nil {
 		v := DefaultPromiscuous
 		cfg.Monitor.Capture.Promiscuous = &v
 	}
+
+	// Channel hopping defaults (only dwell and multiplier — channel lists
+	// are auto-populated at pipeline creation from hardware-supported channels
+	// or code defaults; see internal/capture/pipeline.go).
+	if cfg.Monitor.ChannelHopping.Dwell == 0 {
+		cfg.Monitor.ChannelHopping.Dwell = DefaultDwellTime
+	}
+	if cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier == 0 {
+		cfg.Monitor.ChannelHopping.WeightedDwell.Multiplier = DefaultMultiplier
+	}
+	if cfg.Monitor.ChannelHopping.WeightedDwell.Enabled == nil {
+		v := DefaultWeightedDwell
+		cfg.Monitor.ChannelHopping.WeightedDwell.Enabled = &v
+	}
+
+	// Detection defaults.
 	if cfg.Detection.DedupWindow == 0 {
 		cfg.Detection.DedupWindow = DefaultDedupWindow
 	}
 	if cfg.Detection.AlertBufferSize == 0 {
 		cfg.Detection.AlertBufferSize = DefaultAlertBufferSize
+	}
+
+	// Detection rule defaults.
+	if cfg.Detection.DeauthFlood.Threshold == 0 {
+		cfg.Detection.DeauthFlood.Threshold = DefaultDeauthFloodThreshold
+	}
+	if cfg.Detection.DeauthFlood.Window == 0 {
+		cfg.Detection.DeauthFlood.Window = DefaultDeauthFloodWindow
+	}
+	if cfg.Detection.DisassocFlood.Threshold == 0 {
+		cfg.Detection.DisassocFlood.Threshold = DefaultDisassocFloodThreshold
+	}
+	if cfg.Detection.DisassocFlood.Window == 0 {
+		cfg.Detection.DisassocFlood.Window = DefaultDisassocFloodWindow
+	}
+	if cfg.Detection.BeaconFlood.Threshold == 0 {
+		cfg.Detection.BeaconFlood.Threshold = DefaultBeaconFloodThreshold
+	}
+	if cfg.Detection.BeaconFlood.Window == 0 {
+		cfg.Detection.BeaconFlood.Window = DefaultBeaconFloodWindow
+	}
+	if cfg.Detection.BeaconFlood.LearningPeriod == 0 {
+		cfg.Detection.BeaconFlood.LearningPeriod = DefaultBeaconFloodLearningPeriod
+	}
+	if cfg.Detection.EvilTwin.ScoreThreshold == 0 {
+		cfg.Detection.EvilTwin.ScoreThreshold = DefaultEvilTwinScoreThreshold
+	}
+	if cfg.Detection.EvilTwin.StaleTimeout == 0 {
+		cfg.Detection.EvilTwin.StaleTimeout = DefaultEvilTwinStaleTimeout
+	}
+	if cfg.Detection.EvilTwin.LearningPeriod == 0 {
+		cfg.Detection.EvilTwin.LearningPeriod = DefaultEvilTwinLearningPeriod
+	}
+	if cfg.Detection.EvilTwin.MinBeacons == 0 {
+		cfg.Detection.EvilTwin.MinBeacons = DefaultEvilTwinMinBeacons
+	}
+	if cfg.Detection.UnauthorizedDevice.Cooldown == 0 {
+		cfg.Detection.UnauthorizedDevice.Cooldown = DefaultUnauthorizedDeviceCooldown
 	}
 
 	// State engine defaults.
@@ -108,8 +159,11 @@ func applyDefaults(cfg *Config) { //nolint:gocyclo // sequential zero-value chec
 	if cfg.API.Auth.SessionTTL == 0 {
 		cfg.API.Auth.SessionTTL = DefaultAPISessionTTL
 	}
-	// When the API is enabled, default auth to enabled for security.
-	if cfg.API.Enabled && !cfg.API.Auth.Enabled {
-		cfg.API.Auth.Enabled = true
+	// CookieSecure defaults to true (secure-by-default for HTTPS deployments).
+	// Operators serving the dashboard over plain HTTP on loopback for local
+	// development can override this to false in YAML.
+	if cfg.API.Auth.CookieSecure == nil {
+		v := true
+		cfg.API.Auth.CookieSecure = &v
 	}
 }

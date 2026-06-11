@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,15 +119,6 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		"dedup_window", cfg.Detection.DedupWindow,
 	)
 
-	// TODO(phase-2.3): register attack-detection rules here
-	// (deauth flood, disassoc flood, evil twin, ...).
-
-	if cfg.Detection.Enabled && engine.RuleCount() == 0 {
-		slog.Error("detection.enabled is true but no rules are registered; " +
-			"set detection.enabled=false or register rules before starting")
-		os.Exit(1)
-	}
-
 	// Create capture pipeline with the configured logger.
 	pipeline, err := capture.NewPipeline(cfg, logger)
 	if err != nil {
@@ -146,6 +139,12 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 	sm.Register("capture_stop", func() error {
 		return pipeline.Stop(context.Background())
 	})
+
+	registerDetectionRules(engine, cfg.Detection)
+
+	if cfg.Detection.Enabled && engine.RuleCount() == 0 {
+		slog.Warn("detection enabled but no rules registered; alerts will not be generated")
+	}
 
 	if repo != nil {
 		sm.Register("storage_close", func() error {
@@ -231,6 +230,13 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 	// Start the API server (REST + SSE + dashboard).
 	startTime := time.Now()
 	if cfg.API.Enabled && apiHub != nil {
+		if !cfg.API.Auth.Enabled {
+			// Operators may legitimately disable auth for local development;
+			// log a clear warning so it is never silent in production logs.
+			slog.Warn("api auth disabled; every request runs as admin",
+				"listen", cfg.API.Listen,
+			)
+		}
 		apiSrv, err := api.NewServer(cfg.API, api.Deps{
 			Config:    cfg,
 			State:     stateEngine,
@@ -244,6 +250,12 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		if err != nil {
 			slog.Error("Failed to create API server", "error", err)
 			os.Exit(1)
+		}
+		// Restore mutable runtime settings from the KV store so that
+		// log_level, detection_enabled, and detection_dedup_window survive
+		// daemon restarts.
+		if repo != nil {
+			restorePersistedMutable(signalCtx, repo, engine, apiSrv)
 		}
 		consumerWG.Go(func() { apiHub.Run(signalCtx) })
 		consumerWG.Go(func() {
@@ -264,8 +276,8 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 						continue
 					}
 					if stateEngine != nil {
-						apiHub.Publish(api.Message{Type: api.MessageTypeAP, Data: stateEngine.APs().All()})
-						apiHub.Publish(api.Message{Type: api.MessageTypeClient, Data: stateEngine.Clients().All()})
+						apiHub.Publish(api.NewAPMessage(stateEngine.APs().All()))
+						apiHub.Publish(api.NewClientMessage(stateEngine.Clients().All()))
 					}
 					apiHub.Publish(api.NewStatusMessage(apiSrv.StatusSnapshot(signalCtx)))
 				}
@@ -462,8 +474,10 @@ func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent, r
 			}
 
 			// Broadcast to dashboard subscribers if the API hub is available.
+			// NewSecurityEventMessage produces the same JSON shape as the REST
+			// /api/events endpoint, so SPA consumers can use a single type.
 			if hub != nil {
-				hub.Publish(api.NewEventMessage(event))
+				hub.Publish(api.NewSecurityEventMessage(event))
 			}
 
 			// Persist to storage if available.
@@ -480,4 +494,71 @@ func consumeAlerts(ctx context.Context, alerts <-chan *detector.SecurityEvent, r
 			}
 		}
 	}
+}
+
+func registerDetectionRules(engine *detector.Engine, cfg config.DetectionConfig) {
+	register := func(rule detector.Rule) {
+		if err := engine.Register(rule); err != nil {
+			slog.Error("failed to register detection rule",
+				"rule", rule.Name(),
+				"error", err,
+			)
+		}
+	}
+
+	if cfg.DeauthFlood.Enabled {
+		register(&detector.DeauthFloodRule{})
+	}
+
+	if cfg.DisassocFlood.Enabled {
+		register(&detector.DisassocFloodRule{})
+	}
+
+	if cfg.BeaconFlood.Enabled {
+		register(&detector.BeaconFloodRule{})
+	}
+
+	if cfg.EvilTwin.Enabled {
+		register(&detector.EvilTwinRule{})
+	}
+
+	if cfg.UnauthorizedDevice.Enabled {
+		register(&detector.UnauthorizedDeviceRule{})
+	}
+}
+
+// restorePersistedMutable reads runtime-mutable settings from the SQLite KV
+// store and applies them to the live subsystems. This makes runtime changes
+// (e.g., log_level, detection toggle) survive daemon restarts.
+func restorePersistedMutable(ctx context.Context, repo storage.Repository, engine *detector.Engine, srv *api.Server) {
+	applyKV := func(key string, apply func(string)) {
+		val, err := repo.GetConfig(ctx, "runtime."+key)
+		if err != nil {
+			return // not found or storage error; keep the YAML default
+		}
+		apply(val)
+	}
+
+	applyKV("log_level", func(val string) {
+		if logging.SetLevel(strings.TrimSpace(val)) {
+			slog.Info("restored persisted log level", "level", val)
+		}
+	})
+	applyKV("detection_enabled", func(val string) {
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return
+		}
+		engine.SetEnabled(b)
+		srv.SetDetectionEnabled(b)
+		slog.Info("restored persisted detection state", "enabled", b)
+	})
+	applyKV("detection_dedup_window", func(val string) {
+		d, err := time.ParseDuration(val)
+		if err != nil || d <= 0 {
+			return
+		}
+		engine.SetDedupWindow(d)
+		slog.Info("restored persisted dedup window", "window", d)
+	})
 }

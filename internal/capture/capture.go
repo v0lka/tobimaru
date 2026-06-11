@@ -45,12 +45,22 @@ func OpenCapture(iface string, snaplen int, promisc bool, timeout time.Duration,
 		return nil, fmt.Errorf("failed to activate pcap handle: %w", err)
 	}
 
-	// Set BPF filter for 802.11 management, control, and data frames.
-	filter := "type mgt or type ctl or type data"
-	if err := handle.SetBPFFilter(filter); err != nil {
-		handle.Close()
-		return nil, fmt.Errorf("failed to set BPF filter: %w", err)
-	}
+	// BPF filter is intentionally NOT set.
+	//
+	// On macOS, BPF captures include a variable-length radiotap header before
+	// each 802.11 frame. The BPF filter "type mgt or type ctl or type data"
+	// checks the frame type at a FIXED offset from the link-layer start,
+	// which does not correctly account for the variable radiotap length.
+	// When the filter reads radiotap bytes that happen to match management/
+	// control/data type values, non‑802.11 noise passes through. gopacket
+	// then decodes the noise at the correct offset (it reads the radiotap
+	// length field per-packet) but the data is noise — creating fake BSSIDs
+	// and spamming the state engine with hundreds of phantom APs/clients.
+	//
+	// Without a BPF filter, the kernel delivers all packets from the BPF
+	// device (in RFMON mode these are exclusively 802.11 frames). gopacket
+	// correctly parses all of them using the per-packet radiotap length,
+	// and the Go-level parser drops invalid frames via validateParsedFrame.
 
 	return &CaptureHandle{
 		handle: handle,

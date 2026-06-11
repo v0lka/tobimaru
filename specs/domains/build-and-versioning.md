@@ -8,7 +8,7 @@ Provides build-time version injection, cross-compilation targets, linting config
 
 - `internal/version/version.go` — `Version`, `Commit`, `Date` variables + `String()` formatter
 - `internal/version/version_test.go` — unit tests for version string formatting
-- `Makefile` — build orchestration: `build`, `build-all`, `test`, `lint`, `run`, `clean`
+- `Makefile` — build orchestration: `all`, `build`, `build-all`, `test`, `lint`, `run`, `clean`
 - `.golangci.yml` — lint configuration (golangci-lint v2)
 - `.github/workflows/ci.yml` — CI pipeline: lint, test (with race detector), build matrix
 - `go.mod` — module definition and dependency declarations
@@ -23,7 +23,8 @@ var (
     Date    = "unknown"   // injected via ldflags: -X .../version.Date=$DATE
 )
 
-func String() string  // "Tobimaru v{VERSION} (commit: {COMMIT}, built: {DATE})"
+func SetVersion(v, c, d string)  // test-only helper to set build info (not concurrent-safe)
+func String() string              // "Tobimaru v{VERSION} (commit: {COMMIT}, built: {DATE})"
 ```
 
 ## Flow
@@ -62,11 +63,20 @@ Push/PR to main
   │
   ├─► Job: lint
   │     ├─ Setup Go 1.26
-  │     └─ golangci-lint run
+  │     ├─ Install libpcap-dev
+  │     └─ golangci-lint run ./...
+  │
+  ├─► Job: web (Vite build)
+  │     ├─ Setup Node 22
+  │     ├─ Install SPA dependencies
+  │     ├─ Build SPA + lint
+  │     └─ Upload built web/dist artifact
   │
   ├─► Job: test (Linux)
   │     ├─ Setup Go 1.26
-  │     └─ go test -race -cover ./...
+  │     ├─ Install libpcap-dev
+  │     ├─ go test -race -cover -coverprofile=coverage.out ./...
+  │     └─ Upload coverage to Codecov
   │
   ├─► Job: build (matrix: 3 platforms)
   │     ├─ Setup Go 1.26
@@ -78,7 +88,7 @@ Push/PR to main
         ├─ go test -race -cover -coverprofile=coverage-macos.out ./...
         ├─ go build -o tobimaru-macos ./cmd/tobimaru
         ├─ Smoke test: ./tobimaru-macos --version
-        └─ Upload coverage artifact
+        └─ Upload coverage to Codecov
 ```
 
 ### Version display
@@ -117,6 +127,7 @@ The `--version` flag is parsed in `cmd/tobimaru/main.go` and prints `version.Str
 
 | Target | Description |
 |--------|-------------|
+| `all` | Restore all deps (Go + npm), build web, then build binary |
 | `build` | Build binary for current platform |
 | `build-all` | Cross-compile for all 3 targets |
 | `test` | Run tests with race detector and coverage |
@@ -124,6 +135,10 @@ The `--version` flag is parsed in `cmd/tobimaru/main.go` and prints `version.Str
 | `lint` | Run golangci-lint |
 | `run` | Build and run with ldflags |
 | `clean` | Remove build artifacts |
+| `web-deps` | Install SPA build dependencies (npm ci) |
+| `web` | Sync logo from `images/`, then build the SPA into `internal/api/web/dist/` |
+| `web-clean` | Remove the embedded SPA bundle |
+| `lint-web` | Lint SPA sources with ESLint |
 | `fmt` | Format all Go source files |
 | `tidy` | Tidy Go modules |
 | `help` | Show all targets with descriptions |

@@ -19,14 +19,15 @@ import (
 // It manages the pcap capture goroutine, channel hopping, and delivers parsed frames
 // through a buffered Go channel.
 type Pipeline struct {
-	config     *config.Config
-	monitor    MonitorModeManager
-	handle     *CaptureHandle
-	hopper     *ChannelHopper
-	hopperDone chan struct{}
-	frames     chan *parser.ParsedFrame
-	caps       platform.Capabilities
-	logger     *slog.Logger
+	config        *config.Config
+	monitor       MonitorModeManager
+	handle        *CaptureHandle
+	hopper        *ChannelHopper
+	hopperDone    chan struct{}
+	frames        chan *parser.ParsedFrame
+	caps          platform.Capabilities
+	logger        *slog.Logger
+	captureCancel context.CancelFunc
 }
 
 // NewPipeline creates a new capture pipeline from the application configuration.
@@ -56,6 +57,56 @@ func NewPipeline(cfg *config.Config, logger *slog.Logger) (*Pipeline, error) {
 				)
 				hopCfg.Dwell = minDwell
 			}
+		}
+
+		// Auto-populate channel lists if not explicitly configured,
+		// preferring hardware-supported channels when available.
+		// context.TODO() is used because SupportedChannels is called at
+		// pipeline construction time (before Start). Implementations of
+		// MonitorModeManager.SupportedChannels must not rely on deadline
+		// or cancellation support — see monitor_linux.go and monitor_darwin.go.
+		supported, _ := monitor.SupportedChannels(context.TODO(), cfg.Monitor.Interface)
+		hasHW := len(supported) > 0
+
+		if len(hopCfg.Channels2GHz) == 0 {
+			if hasHW {
+				hopCfg.Channels2GHz = filterBand(supported, 1, 14)
+			} else {
+				hopCfg.Channels2GHz = config.DefaultChannels2GHz()
+			}
+			logger.Info("auto-populated 2.4 GHz channels",
+				"channel_count", len(hopCfg.Channels2GHz),
+				"source", pick(hasHW, "hardware", "built-in defaults"),
+			)
+		}
+		if hopCfg.Include5GHz && len(hopCfg.Channels5GHz) == 0 {
+			if hasHW {
+				hopCfg.Channels5GHz = filterBand(supported, 36, 200)
+			} else {
+				hopCfg.Channels5GHz = config.DefaultChannels5GHz()
+			}
+			logger.Info("auto-populated 5 GHz channels",
+				"channel_count", len(hopCfg.Channels5GHz),
+				"source", pick(hasHW, "hardware", "built-in defaults"),
+			)
+		}
+
+		// Filter configured (or auto-populated) channels against
+		// hardware-supported list to avoid attempting unsupported
+		// channels (e.g., DFS channels on macOS adapters).
+		if hasHW {
+			hopCfg.Channels2GHz = intersectChannels(hopCfg.Channels2GHz, supported)
+			if hopCfg.Include5GHz {
+				before := len(hopCfg.Channels5GHz)
+				hopCfg.Channels5GHz = intersectChannels(hopCfg.Channels5GHz, supported)
+				if dropped := before - len(hopCfg.Channels5GHz); dropped > 0 {
+					logger.Warn("some configured 5 GHz channels are not supported by the adapter; removing them",
+						"dropped", dropped,
+						"remaining", len(hopCfg.Channels5GHz),
+					)
+				}
+			}
+			hopCfg.WeightedDwell.PrimaryChannels = intersectChannels(hopCfg.WeightedDwell.PrimaryChannels, supported)
 		}
 
 		hopper, err = NewChannelHopper(&hopCfg)
@@ -161,6 +212,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 
 	// Start capture goroutine.
 	captureCtx, cancel := context.WithCancel(ctx)
+	p.captureCancel = cancel
 	go p.captureLoop(captureCtx, cancel)
 
 	// Start channel hopper goroutine with done signal for clean shutdown ordering.
@@ -183,21 +235,38 @@ func (p *Pipeline) Start(ctx context.Context) error {
 }
 
 // disableMonitorTimeout caps how long Pipeline.Stop waits for the OS-level
-// "disable monitor mode" command (iw/airport) to return. Prevents the daemon
+// "disable monitor mode" command (iw/CoreWLAN) to return. Prevents the daemon
 // from hanging on a broken or unresponsive interface during shutdown.
 const disableMonitorTimeout = 5 * time.Second
 
 // Stop stops the capture pipeline and restores the interface to managed mode.
-// The OS-level "disable monitor mode" command runs with disableMonitorTimeout
-// to prevent shutdown from hanging on broken interfaces. The caller's ctx
-// deadline is respected as an upper bound on the operation.
+// It cancels the capture context so any in-flight goroutines (capture loop,
+// channel hopper) start unwinding, then waits for the channel hopper to
+// finish before disabling monitor mode so no SetChannel calls race against
+// it. The OS-level "disable monitor mode" command runs with
+// disableMonitorTimeout to prevent shutdown from hanging on broken
+// interfaces. The caller's ctx deadline is respected as an upper bound on
+// every wait inside Stop.
 func (p *Pipeline) Stop(ctx context.Context) error {
 	iface := p.config.Monitor.Interface
 
+	// Ensure capture/hopper goroutines see cancellation even if the parent
+	// context passed to Start is still alive. Without this, hopperDone may
+	// never be closed and Stop would block until the parent context is
+	// canceled, ignoring its own ctx deadline.
+	if p.captureCancel != nil {
+		p.captureCancel()
+	}
+
 	// Wait for the channel hopper to finish before disabling monitor mode,
-	// ensuring no SetChannel calls are in flight.
+	// ensuring no SetChannel calls are in flight. Respect the caller's ctx
+	// so a broken hopper cannot stall shutdown indefinitely.
 	if p.hopperDone != nil {
-		<-p.hopperDone
+		select {
+		case <-p.hopperDone:
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for channel hopper to stop: %w", ctx.Err())
+		}
 	}
 
 	if !p.monitor.IsSupported() {
@@ -221,6 +290,14 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 	defer close(p.frames)
 
 	source := p.handle.PacketSource()
+
+	// Aggregate parse errors so the log is not flooded with per-packet
+	// DEBUG entries when the capture interface receives non‑802.11
+	// traffic (common on macOS where the BPF radiotap filter may not
+	// correctly skip the variable-length radiotap header).
+	var parseErrors uint64
+	parseErrTicker := time.NewTicker(30 * time.Second)
+	defer parseErrTicker.Stop()
 
 	for {
 		select {
@@ -247,7 +324,7 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 
 		frame, err := safeParse(packet)
 		if err != nil {
-			p.logger.Debug("frame parse error", "error", err)
+			parseErrors++
 			continue
 		}
 
@@ -259,6 +336,14 @@ func (p *Pipeline) captureLoop(ctx context.Context, cancel context.CancelFunc) {
 		case p.frames <- frame:
 		case <-ctx.Done():
 			return
+		case <-parseErrTicker.C:
+			if parseErrors > 0 {
+				p.logger.Debug("capture parse errors",
+					"count", parseErrors,
+					"note", "non-802.11 packets dropped; common on macOS when BPF radiotap filter is imperfect",
+				)
+				parseErrors = 0
+			}
 		}
 	}
 }
@@ -287,4 +372,44 @@ func (p *Pipeline) channelHopperLoop(ctx context.Context) {
 		p.logger.Debug("hopping to channel", "channel", channel)
 		return p.monitor.SetChannel(ctx, p.config.Monitor.Interface, channel)
 	})
+}
+
+// intersectChannels returns the intersection of configured and supported
+// channels, preserving the configured order.
+func intersectChannels(configured, supported []int) []int {
+	if len(configured) == 0 || len(supported) == 0 {
+		return configured
+	}
+	supportedSet := make(map[int]struct{}, len(supported))
+	for _, ch := range supported {
+		supportedSet[ch] = struct{}{}
+	}
+	result := make([]int, 0, len(configured))
+	for _, ch := range configured {
+		if _, ok := supportedSet[ch]; ok {
+			result = append(result, ch)
+		}
+	}
+	return result
+}
+
+// filterBand returns channels from the flat supported list that fall within
+// [minCh, maxCh). Used to split hardware-supported channels into 2.4 GHz
+// (1..14) and 5 GHz (36+) bands.
+func filterBand(channels []int, minCh, maxCh int) []int {
+	result := make([]int, 0, len(channels))
+	for _, ch := range channels {
+		if ch >= minCh && ch < maxCh {
+			result = append(result, ch)
+		}
+	}
+	return result
+}
+
+// pick returns a if cond is true, otherwise b. Used for log field values.
+func pick(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
 }

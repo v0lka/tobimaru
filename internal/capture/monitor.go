@@ -23,6 +23,12 @@ type MonitorModeManager interface {
 	// SetChannel sets the interface's operating channel.
 	SetChannel(ctx context.Context, iface string, channel int) error
 
+	// SupportedChannels returns the list of channel numbers the interface
+	// supports for the given interface. Returns (nil, nil) when the platform
+	// cannot enumerate channels — in that case all configured channels are
+	// assumed to be supported (the caller falls back to trial-and-error).
+	SupportedChannels(ctx context.Context, iface string) ([]int, error)
+
 	// IsSupported reports whether monitor mode is available on this platform.
 	IsSupported() bool
 }

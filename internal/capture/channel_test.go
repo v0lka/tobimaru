@@ -26,12 +26,13 @@ func TestNewChannelHopper(t *testing.T) {
 }
 
 func TestChannelHopperWeightedDwell(t *testing.T) {
+	wdEnabled := true
 	cfg := config.ChannelHoppingConfig{
 		Enabled:      true,
 		Dwell:        100 * time.Millisecond,
 		Channels2GHz: []int{1, 2, 6, 11},
 		WeightedDwell: config.WeightedDwellConfig{
-			Enabled:         true,
+			Enabled:         &wdEnabled,
 			PrimaryChannels: []int{6, 11},
 			Multiplier:      3.0,
 		},
@@ -228,13 +229,14 @@ func TestChannelHopperRunBackoffResetsOnSuccess(t *testing.T) {
 // TestNewChannelHopperPrimaryChannelsCopy verifies that NewChannelHopper does
 // not retain a reference to the caller's PrimaryChannels slice.
 func TestNewChannelHopperPrimaryChannelsCopy(t *testing.T) {
+	wdEnabled := true
 	primary := []int{6}
 	cfg := config.ChannelHoppingConfig{
 		Enabled:      true,
 		Dwell:        100 * time.Millisecond,
 		Channels2GHz: []int{1, 6},
 		WeightedDwell: config.WeightedDwellConfig{
-			Enabled:         true,
+			Enabled:         &wdEnabled,
 			PrimaryChannels: primary,
 			Multiplier:      2.0,
 		},

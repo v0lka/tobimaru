@@ -4,9 +4,11 @@
 package parser
 
 import (
+	"bytes"
 	"errors"
 	"net"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
@@ -18,7 +20,21 @@ var (
 	ErrNoDot11Layer = errors.New("no Dot11 layer found in packet")
 	// ErrInvalidDot11Layer indicates the Dot11 layer could not be cast.
 	ErrInvalidDot11Layer = errors.New("failed to cast Dot11 layer")
+	// errFrameRejected is returned when the post-classification validation
+	// detects garbage fields — common on macOS where the BPF radiotap filter
+	// delivers non‑802.11 noise. It is intentionally unexported so callers
+	// treat it like any other parse error and drop the frame.
+	errFrameRejected = errors.New("frame rejected: fields appear to be garbage")
+	// errBadFCS is returned when the radiotap header's BadFCS flag is set,
+	// indicating the frame failed its hardware FCS check. In RFMON mode the
+	// NIC delivers all frames regardless of CRC validity — these corrupted
+	// frames have valid-looking headers but garbage bodies (garbled SSIDs).
+	errBadFCS = errors.New("frame rejected: bad FCS (corrupted)")
 )
+
+// beaconIntervalMax is the largest plausible beacon interval (10000 TU ≈ 10.24 s).
+// Intervals beyond this range indicate garbage data misinterpreted as a beacon.
+const beaconIntervalMax uint16 = 10000
 
 // FrameType represents the high-level classification of an 802.11 frame.
 type FrameType int
@@ -146,6 +162,11 @@ const maxIEsPerFrame = 256
 // Parse decodes a raw packet captured via gopacket into a ParsedFrame.
 // It extracts RadioTap metadata (RSSI, channel), Dot11 addressing, and
 // management/control/data-specific fields.
+//
+// After classification, a validation pass runs to reject frames whose
+// physical-layer fields are clearly garbage. This is essential on macOS
+// where the BPF radiotap filter may not correctly offset past the
+// variable-length radiotap header, letting non‑802.11 noise through.
 func Parse(packet gopacket.Packet) (*ParsedFrame, error) {
 	f := &ParsedFrame{
 		Timestamp:    packet.Metadata().Timestamp,
@@ -158,6 +179,13 @@ func Parse(packet gopacket.Packet) (*ParsedFrame, error) {
 		rt, ok := rtLayer.(*layers.RadioTap)
 		if ok {
 			parseRadioTap(f, rt)
+			// Reject frames with bad FCS immediately. In RFMON mode the NIC
+			// delivers all frames including those that failed hardware CRC —
+			// their bodies are corrupted (garbled SSIDs, wrong IEs) while
+			// headers may appear structurally valid.
+			if hasBadFCS(rt) {
+				return nil, errBadFCS
+			}
 		}
 	}
 
@@ -190,14 +218,23 @@ func Parse(packet gopacket.Packet) (*ParsedFrame, error) {
 		f.Channel = freqToChannel(f.ChannelFreq)
 	}
 
+	// Reject frames whose physical-layer fields are clearly garbage.
+	// On macOS the BPF radiotap filter often delivers non‑802.11 packets
+	// whose random bytes gopacket may decode as plausible management frames
+	// with garbage BSSIDs. These checks catch such false positives.
+	if !validateParsedFrame(f) {
+		return nil, errFrameRejected
+	}
+
 	return f, nil
 }
 
 // parseRadioTap extracts RSSI and channel information from the RadioTap header.
 // It is defensive against malformed RadioTap headers where Present and
-// RadioTapValues lengths may not match.
+// RadioTapValues lengths may not match. Both slices must be non-empty and
+// length-aligned; a mismatch indicates a corrupted or truncated header.
 func parseRadioTap(f *ParsedFrame, rt *layers.RadioTap) {
-	if len(rt.Present) == 0 || len(rt.RadioTapValues) == 0 {
+	if len(rt.Present) == 0 || len(rt.RadioTapValues) == 0 || len(rt.Present) != len(rt.RadioTapValues) {
 		return
 	}
 	if rt.Present[0].DBMAntennaSignal() {
@@ -206,6 +243,21 @@ func parseRadioTap(f *ParsedFrame, rt *layers.RadioTap) {
 	if rt.Present[0].Channel() {
 		f.ChannelFreq = int(rt.RadioTapValues[0].ChannelFrequency)
 	}
+}
+
+// hasBadFCS reports whether the radiotap Flags field indicates the frame
+// failed its hardware FCS (Frame Check Sequence) check. In RFMON mode, the
+// NIC delivers all received frames regardless of CRC validity. Frames with
+// bad FCS have structurally valid headers but corrupted bodies — producing
+// garbled SSIDs and bogus Information Elements.
+func hasBadFCS(rt *layers.RadioTap) bool {
+	if len(rt.Present) == 0 || len(rt.RadioTapValues) == 0 || len(rt.Present) != len(rt.RadioTapValues) {
+		return false
+	}
+	if !rt.Present[0].Flags() {
+		return false // Flags field not present — cannot determine FCS status
+	}
+	return rt.RadioTapValues[0].Flags.BadFCS()
 }
 
 // parseDot11 extracts addressing and flags from the Dot11 header.
@@ -500,4 +552,157 @@ func freqToChannel(freq int) int {
 		return (freq - 5000) / 5
 	}
 	return 0
+}
+
+// isUnicastMAC reports whether hw is a unicast (non-broadcast, non-multicast)
+// hardware address. Valid 802.11 BSSIDs and source addresses are always unicast.
+func isUnicastMAC(hw net.HardwareAddr) bool {
+	if len(hw) != 6 {
+		return false
+	}
+	return hw[0]&0x01 == 0
+}
+
+// allZeroMAC reports whether hw is all zeros.
+func allZeroMAC(hw net.HardwareAddr) bool {
+	for _, b := range hw {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// validateParsedFrame performs sanity checks on the fields of a parsed frame
+// after classification. It returns false when the frame's physical-layer
+// fields are clearly garbage — a common scenario on macOS where the BPF
+// radiotap filter delivers non‑802.11 noise that gopacket may decode as
+// plausible-looking management frames with random BSSIDs and intervals.
+func validateParsedFrame(f *ParsedFrame) bool {
+	switch f.FrameType {
+	case FrameTypeBeacon:
+		// 802.11 §9.3.3.2: beacons are always sent to broadcast DA
+		// and Address2 (SA) == Address3 (BSSID).
+		// Random bytes interpreted as a beacon header will almost
+		// never satisfy both — these checks are definitive for
+		// rejecting garbage/noise packets.
+		if f.BSSID == nil || allZeroMAC(f.BSSID) || !isUnicastMAC(f.BSSID) {
+			return false
+		}
+		if f.SrcMAC == nil || !bytes.Equal(f.SrcMAC, f.BSSID) {
+			return false
+		}
+		if f.DstMAC == nil || !isBroadcastMAC(f.DstMAC) {
+			return false
+		}
+		// Beacon interval must be non-zero and within plausible range.
+		// Garbage frames typically have 0 or values >10000 TU (≈10.24s).
+		if f.BeaconInterval == 0 || f.BeaconInterval > beaconIntervalMax {
+			return false
+		}
+		// SSID must be valid: either empty (hidden network) or contain only
+		// printable characters. Corrupted frames (bad FCS that slipped past
+		// the radiotap check, or partial frame captures during channel hops)
+		// often have intact headers but garbled bodies → garbage SSIDs.
+		if f.SSID != "" && !isValidSSID(f.SSID) {
+			return false
+		}
+
+	case FrameTypeProbeResponse:
+		// Probe responses have SrcMAC == BSSID and are unicast to the
+		// requesting client, so DstMAC can be unicast or broadcast.
+		if f.BSSID == nil || allZeroMAC(f.BSSID) || !isUnicastMAC(f.BSSID) {
+			return false
+		}
+		if f.SrcMAC == nil || !bytes.Equal(f.SrcMAC, f.BSSID) {
+			return false
+		}
+		if f.DstMAC == nil || allZeroMAC(f.DstMAC) {
+			return false
+		}
+		// Beacon interval must be non-zero and within plausible range.
+		if f.BeaconInterval == 0 || f.BeaconInterval > beaconIntervalMax {
+			return false
+		}
+		// SSID validation — same as beacon.
+		if f.SSID != "" && !isValidSSID(f.SSID) {
+			return false
+		}
+
+	case FrameTypeProbeRequest:
+		// Source MAC (Address2 for probe requests) must be unicast.
+		// Probe requests from broadcast or multicast addresses are garbage.
+		if f.SrcMAC == nil || !isUnicastMAC(f.SrcMAC) {
+			return false
+		}
+		// Destination is typically broadcast (wildcard probe) or a
+		// specific BSSID (directed probe). All-zero is garbage.
+		if f.DstMAC == nil || allZeroMAC(f.DstMAC) {
+			return false
+		}
+
+	case FrameTypeAssocReq, FrameTypeReassocReq, FrameTypeAuth:
+		// Source MAC must be unicast and destination must be valid.
+		if f.SrcMAC == nil || !isUnicastMAC(f.SrcMAC) {
+			return false
+		}
+		if f.DstMAC == nil || allZeroMAC(f.DstMAC) {
+			return false
+		}
+
+	case FrameTypeData, FrameTypeQoSData:
+		// At minimum, SrcMAC must be unicast. Garbage often has all-
+		// broadcast or all-zero addresses.
+		if f.SrcMAC == nil || !isUnicastMAC(f.SrcMAC) {
+			return false
+		}
+		if f.DstMAC == nil || allZeroMAC(f.DstMAC) {
+			return false
+		}
+
+	case FrameTypeUnknown, FrameTypeDeauth, FrameTypeDisassoc,
+		FrameTypeAssocResp, FrameTypeReassocResp, FrameTypeAction,
+		FrameTypeCTS, FrameTypeRTS, FrameTypeACK,
+		FrameTypeBlockAckReq, FrameTypeBlockAck, FrameTypeNull:
+		// No additional validation for these frame types.
+	}
+
+	return true
+}
+
+// isBroadcastMAC reports whether hw is the broadcast address ff:ff:ff:ff:ff:ff.
+func isBroadcastMAC(hw net.HardwareAddr) bool {
+	if len(hw) != 6 {
+		return false
+	}
+	for _, b := range hw {
+		if b != 0xff {
+			return false
+		}
+	}
+	return true
+}
+
+// isValidSSID checks whether an SSID string contains only characters that
+// a real access point would use. Valid SSIDs are:
+//   - Valid UTF-8 (most real APs use ASCII or UTF-8 for multi-language SSIDs)
+//   - Contain no ASCII control characters (0x00–0x1F, 0x7F)
+//   - Length ≤ 32 bytes (802.11 limit)
+//
+// Corrupted frames from bad-FCS packets or partial captures during channel
+// hops often have intact 802.11 headers but garbled frame bodies, producing
+// SSIDs with non-printable bytes, invalid UTF-8 sequences, or excessive length.
+func isValidSSID(ssid string) bool {
+	if len(ssid) > 32 {
+		return false
+	}
+	if !utf8.ValidString(ssid) {
+		return false
+	}
+	for _, r := range ssid {
+		if r < 0x20 || r == 0x7F {
+			return false
+		}
+	}
+	return true
 }

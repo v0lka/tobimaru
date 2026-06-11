@@ -57,7 +57,7 @@ func NewChannelHopper(cfg *config.ChannelHoppingConfig) (*ChannelHopper, error) 
 	// Add 2.4 GHz channels.
 	for _, ch := range cfg.Channels2GHz {
 		dwell := cfg.Dwell
-		if cfg.WeightedDwell.Enabled && slices.Contains(primary, ch) {
+		if cfg.WeightedDwell.Enabled != nil && *cfg.WeightedDwell.Enabled && slices.Contains(primary, ch) {
 			dwell = time.Duration(float64(dwell) * cfg.WeightedDwell.Multiplier)
 		}
 		entries = append(entries, channelEntry{channel: ch, dwell: dwell})

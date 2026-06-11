@@ -98,6 +98,7 @@ func Handler() http.Handler {
 		// Direct file in dist (favicon.ico, robots.txt, etc.).
 		if f, err := sub.Open(name); err == nil {
 			f.Close()
+			w.Header().Set("Cache-Control", "no-cache")
 			http.ServeFileFS(w, r, sub, name)
 			return
 		}

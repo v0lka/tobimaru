@@ -2,7 +2,7 @@
 
 ## Boundary Rule
 
-`internal/api` consumes types from `internal/{config,state,storage,detector,capture,version,logging}` and exposes a single HTTP surface. The package is consumed only by `cmd/tobimaru`. No internal package other than `cmd/tobimaru` may import `internal/api`.
+`internal/api` consumes types from `internal/{config,state,storage,detector,capture,platform,version,logging}` and exposes a single HTTP surface. The package is consumed only by `cmd/tobimaru`. No internal package other than `cmd/tobimaru` may import `internal/api`.
 
 ## Interfaces
 
@@ -11,10 +11,15 @@
 | `api.NewServer(cfg APIConfig, deps Deps) (*Server, error)` | `internal/api` | `cmd/tobimaru` | Build the HTTP server and chi router |
 | `api.Server.Run(ctx) error` | `internal/api` | `cmd/tobimaru` | Listen and serve until ctx is canceled |
 | `api.Server.Shutdown(ctx) error` | `internal/api` | `cmd/tobimaru` | Graceful HTTP shutdown |
-| `api.NewHub(logger) *Hub` | `internal/api` | `cmd/tobimaru` | Build SSE fan-out broadcaster |
+| `api.NewHub(logger, opts...) *Hub` | `internal/api` | `cmd/tobimaru` | Build SSE fan-out broadcaster with optional HubOption variants |
 | `api.Hub.Run(ctx)` | `internal/api` | `cmd/tobimaru` | Drain publish queue and broadcast |
 | `api.Hub.Publish(Message)` | `internal/api` | `cmd/tobimaru` | Push an event/state update to subscribers |
-| `api.NewEventMessage(payload) Message` | `internal/api` | `cmd/tobimaru` | Wrap a security event in an SSE message |
+| `api.Hub.HasSubscribers() bool` | `internal/api` | `cmd/tobimaru` | Check for active subscribers to skip idle work |
+| `api.Hub.Subscribe() (<-chan Message, unsubscribe func())` | `internal/api` | `internal/api` (handleStream) | Register a subscriber and get its receive channel |
+| `api.NewSecurityEventMessage(event) Message` | `internal/api` | `cmd/tobimaru` | Wrap a security event in an SSE message using the REST DTO |
+| `api.NewStatusMessage(payload) Message` | `internal/api` | `cmd/tobimaru` | Wrap a status snapshot for SSE broadcast |
+| `api.NewAPMessage(aps) Message` | `internal/api` | `cmd/tobimaru` | Wrap AP state using DTO-safe MAC encoding |
+| `api.NewClientMessage(clients) Message` | `internal/api` | `cmd/tobimaru` | Wrap client state using DTO-safe MAC encoding |
 | `storage.Repository.{Create,Get,Delete}Session, PruneExpiredSessions` | `internal/storage` | `internal/api` | Session-cookie persistence |
 
 ## HTTP Surface
@@ -83,8 +88,7 @@ Stable `type` slugs:
 - `Content-Type: text/event-stream`.
 - Each subscriber has a per-connection bounded channel; slow subscribers
   drop messages, never block the broadcaster.
-- Message types: `event` (security events), `status` (status updates),
-  `ap`, `client`, plus `hello` once on connect.
+- Message types: `event` (security events via `NewSecurityEventMessage`), `ap` (AP state snapshots via `NewAPMessage`), `client` (client state snapshots via `NewClientMessage`), `status` (status updates via `NewStatusMessage`), plus `hello` once on connect.
 - `: keepalive` comment lines are emitted every 15 s.
 
 ## Data Flow Across Boundary

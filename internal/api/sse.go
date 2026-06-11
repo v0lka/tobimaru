@@ -5,12 +5,16 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+
+	"github.com/vkochetkov/tobimaru/internal/detector"
+	"github.com/vkochetkov/tobimaru/internal/state"
 )
 
 // Message is a single payload broadcast over the SSE channel.
 type Message struct {
 	// Type is a stable identifier consumed by the SPA: "event", "ap",
-	// "client", "status", "ping". It maps to the SSE `event:` field.
+	// "client", "status", "hello" — each has a corresponding MessageType*
+	// constant. It maps to the SSE `event:` field.
 	Type string `json:"type"`
 	// Data is the JSON-encodable payload.
 	Data any `json:"data"`
@@ -22,16 +26,60 @@ const (
 	MessageTypeAP     = "ap"
 	MessageTypeClient = "client"
 	MessageTypeStatus = "status"
+	MessageTypeHello  = "hello"
 )
 
-// NewEventMessage wraps a security event payload as a Message.
+// NewEventMessage wraps an arbitrary payload as an "event" Message. Prefer
+// NewSecurityEventMessage for *detector.SecurityEvent so the wire format
+// matches the REST `/api/events` DTO consumed by the SPA.
 func NewEventMessage(payload any) Message {
 	return Message{Type: MessageTypeEvent, Data: payload}
+}
+
+// NewSecurityEventMessage wraps a security event using the same DTO as the
+// REST `/api/events` endpoint, so SPA and external SSE consumers see the
+// snake_case, MAC-as-string shape they expect.
+func NewSecurityEventMessage(ev *detector.SecurityEvent) Message {
+	if ev == nil {
+		return Message{Type: MessageTypeEvent, Data: nil}
+	}
+	dto := newEventDTO(ev)
+	return Message{Type: MessageTypeEvent, Data: dto}
 }
 
 // NewStatusMessage wraps a status payload as a Message.
 func NewStatusMessage(payload any) Message {
 	return Message{Type: MessageTypeStatus, Data: payload}
+}
+
+// NewAPMessage wraps a snapshot of access points as an "ap" Message using
+// the same DTO as the REST `/api/aps` endpoint. Callers in cmd/tobimaru
+// must use this constructor (not Message{Data: state.APs().All()}) so that
+// MAC addresses serialize as colon-separated hex strings rather than the
+// base64 form Go's default JSON encoder produces for net.HardwareAddr.
+func NewAPMessage(aps []*state.APInfo) Message {
+	out := make([]apDTO, 0, len(aps))
+	for _, ap := range aps {
+		if ap == nil {
+			continue
+		}
+		out = append(out, newAPDTO(ap))
+	}
+	return Message{Type: MessageTypeAP, Data: out}
+}
+
+// NewClientMessage wraps a snapshot of WiFi clients as a "client" Message
+// using the same DTO as the REST `/api/clients` endpoint. See
+// NewAPMessage for why direct serialization of state.ClientInfo is unsafe.
+func NewClientMessage(clients []*state.ClientInfo) Message {
+	out := make([]clientDTO, 0, len(clients))
+	for _, c := range clients {
+		if c == nil {
+			continue
+		}
+		out = append(out, newClientDTO(c))
+	}
+	return Message{Type: MessageTypeClient, Data: out}
 }
 
 // subscriber is a single SSE client connection's receive channel and id.

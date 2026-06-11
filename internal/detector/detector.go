@@ -40,7 +40,7 @@ type Engine struct {
 	dedup       map[string]time.Time   // dedup cache (key → last emission time)
 	mu          sync.Mutex             // guards dedup map
 	started     atomic.Bool            // set true on first Run; rejects late Register
-	frameCount  uint64                 // total frames processed; single-goroutine writer
+	frameCount  atomic.Uint64          // total frames processed; safe for concurrent readers
 }
 
 // NewEngine creates a new detection engine from the detection configuration.
@@ -161,8 +161,7 @@ func (e *Engine) dispatch(frame *parser.ParsedFrame) {
 		return
 	}
 
-	e.frameCount++
-	count := e.frameCount
+	count := e.frameCount.Add(1)
 
 	for _, rule := range e.rules {
 		e.processRule(rule, frame)

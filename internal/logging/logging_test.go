@@ -74,3 +74,53 @@ func TestParseLevelUnknown(t *testing.T) {
 		t.Errorf("got %v, want fallback to LevelInfo", l)
 	}
 }
+
+func TestSetLevel_AllLevels(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  slog.Level
+	}{
+		{"debug", config.LogLevelDebug, slog.LevelDebug},
+		{"info", config.LogLevelInfo, slog.LevelInfo},
+		{"warn", config.LogLevelWarn, slog.LevelWarn},
+		{"error", config.LogLevelError, slog.LevelError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ok := SetLevel(tt.input)
+			if !ok {
+				t.Error("SetLevel returned false for valid level")
+			}
+			if got := levelVar.Level(); got != tt.want {
+				t.Errorf("levelVar.Level() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSetLevel_Unknown(t *testing.T) {
+	if SetLevel("verbose") {
+		t.Error("SetLevel should return false for unknown level")
+	}
+}
+
+func TestLevel_ReturnsString(t *testing.T) {
+	tests := []struct {
+		set  string
+		want string
+	}{
+		{config.LogLevelDebug, config.LogLevelDebug},
+		{config.LogLevelInfo, config.LogLevelInfo},
+		{config.LogLevelWarn, config.LogLevelWarn},
+		{config.LogLevelError, config.LogLevelError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.set, func(t *testing.T) {
+			SetLevel(tt.set)
+			if got := Level(); got != tt.want {
+				t.Errorf("Level() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -223,6 +223,7 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 | `enabled` | bool | true | Включение правила |
 | `score_threshold` | int | 80 | Минимальный score для срабатывания |
 | `stale_timeout` | duration | 5m | Таймаут удаления неактивных AP |
+| `learning_period` | duration | 60s | Период обучения при запуске (не алертить) |
 | `min_beacons` | int | 3 | Минимум beacon'ов от AP перед сравнением |
 
 ### SecurityEvent
@@ -240,6 +241,10 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 | `Metadata["legitimate_channel"]` | Канал легитимной AP |
 | `Metadata["score"]` | Вычисленный score |
 | `Metadata["ie_mismatch"]` | Список несовпавших IE |
+| `Metadata["new_bssid"]` | BSSID подозрительной AP |
+| `Metadata["new_channel"]` | Канал подозрительной AP |
+| `Metadata["new_rssi"]` | RSSI подозрительной AP |
+| `Metadata["min_beacons"]` | Порог минимального количества beacon'ов |
 
 ### Сложности реализации
 
@@ -325,7 +330,7 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 
 ### Примечания
 
-- `SrcMAC` в событии может быть пустым или одним из fake BSSID, т.к. атакующий меняет MAC.
+- `SrcMAC` в событии заполняется MAC-адресом отправителя из триггерного фрейма.
 - Severity — `Warning`, а не `Critical`, т.к. атака является DoS, но не приводит к утечке данных.
 
 ---
@@ -364,19 +369,21 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 Тип: Whitelist Lookup
 Ключи конфигурации:
   - protected_bssids: []MAC — список BSSID защищаемых AP
+  - protected_ssids: []string — список SSID защищаемых сетей (для probe request)
   - whitelist: []MAC — разрешённые клиентские устройства
 
 Для каждого входящего фрейма:
   1. Фильтр по типу:
      - FrameTypeAssocReq / FrameTypeReassocReq — клиент пытается подключиться
      - FrameTypeAuth — клиент начинает аутентификацию
-     - (Опционально) FrameTypeProbeRequest с конкретным SSID
-  2. Проверить: BSSID ∈ protected_bssids?
-     - Нет → нерелевантная AP, пропустить
+     - FrameTypeProbeRequest с конкретным SSID (если alert_on_probe: true)
+  2. Проверить: BSSID ∈ protected_bssids? (для assoc/auth)
+     - Для ProbeRequest: SSID ∈ protected_ssids?
+     - Нет → нерелевантная AP/сеть, пропустить
   3. Проверить: SrcMAC ∈ whitelist?
      - Да → легитимный клиент, пропустить
      - Нет → неизвестное устройство → генерировать событие
-  4. Защита от спама: дедупликация по SrcMAC (не генерировать повторно для одного устройства)
+  4. Защита от спама: cooldown по SrcMAC (не генерировать повторно для одного устройства)
 ```
 
 ### Параметры конфигурации
@@ -385,6 +392,7 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 |----------|-----|---------|----------|
 | `enabled` | bool | false | Включение (по умолчанию отключено, т.к. требует whitelist) |
 | `protected_bssids` | []string | [] | Список BSSID защищаемых AP |
+| `protected_ssids` | []string | [] | Список SSID защищаемых сетей (для probe request) |
 | `whitelist` | []string | [] | Список разрешённых MAC клиентов |
 | `alert_on_probe` | bool | false | Алертить на probe request (шумный) |
 | `cooldown` | duration | 5m | Не алертить повторно для одного MAC в течение этого времени |
@@ -397,18 +405,19 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 | `Severity` | `SeverityWarning` |
 | `SrcMAC` | MAC неизвестного устройства |
 | `DstMAC` | BSSID целевой AP |
-| `BSSID` | BSSID защищаемой AP |
+| `BSSID` | BSSID защищаемой AP (из frame.BSSID; fallback на DstMAC) |
 | `SSID` | SSID защищаемой сети (если доступен) |
 | `Channel` | Канал |
 | `RSSI` | Сила сигнала устройства |
 | `Metadata["frame_type"]` | Тип фрейма, вызвавшего срабатывание ("assoc_req", "auth", etc.) |
-| `Metadata["protected_ap"]` | BSSID защищаемой AP |
+| `Metadata["protected_target"]` | Целевой BSSID или SSID защищаемой AP |
+| `Metadata["cooldown"]` | Установленный cooldown |
 
 ### Особенности реализации
 
 1. **Whitelist необходим** — правило бесполезно без заполненного whitelist. На Phase 2 whitelist задаётся в конфиге. На Phase 3 — из state/storage.
 2. **MAC Randomization** — современные устройства рандомизируют MAC при probe request'ах. Рекомендация: по умолчанию не алертить на probe request (`alert_on_probe: false`), т.к. это вызовет шквал false positives.
-3. **Protected BSSIDs** — если не заданы, правило не может работать; `Init()` должен вернуть ошибку или правило должно быть отключено.
+3. **Protected BSSIDs / SSIDs** — если не заданы, правило не может работать; `Init()` должен вернуть ошибку или правило должно быть отключено. При `alert_on_probe: true` необходимо задать хотя бы один `protected_ssid`.
 4. **Cooldown** — внутренний механизм (в дополнение к Engine dedup) для подавления повторных алертов для одного MAC.
 
 ---
@@ -421,7 +430,7 @@ func compareRSN(ie1, ie2 map[uint8][]byte) bool {
 | Disassoc Flood | `FrameTypeDisassoc` | SrcMAC | Sliding Window Counter | Critical |
 | Evil Twin | `FrameTypeBeacon`, `FrameTypeProbeResponse` | SSID | State Table + Score | Critical |
 | Beacon Flood | `FrameTypeBeacon` | Channel | Unique BSSID Counter | Warning |
-| Unauthorized Device | `FrameTypeAssocReq`, `FrameTypeAuth` | SrcMAC | Whitelist Lookup | Warning |
+| Unauthorized Device | `FrameTypeAssocReq`, `FrameTypeAuth`, `FrameTypeProbeRequest` | SrcMAC | Whitelist Lookup + Cooldown | Warning |
 
 ---
 

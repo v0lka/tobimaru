@@ -54,6 +54,10 @@ type statusStorageBlock struct {
 
 type statusAuthBlock struct {
 	Enabled bool `json:"enabled"`
+	// Role is the authenticated session's role when present, e.g. "admin" or
+	// "user". Empty when auth is disabled or the request is anonymous; the
+	// SPA uses it to gate admin-only UI affordances after a page reload.
+	Role string `json:"role,omitempty"`
 }
 
 type statusSubscribersBlock struct {
@@ -82,6 +86,12 @@ func (s *Server) buildStatusResponse(ctx context.Context) statusResponse {
 		},
 		Storage: statusStorageBlock{Enabled: s.deps.Config.Storage.Enabled},
 		Auth:    statusAuthBlock{Enabled: s.cfg.Auth.Enabled},
+	}
+	// Surface the active session role so the SPA can keep admin-only
+	// controls visible across reloads. Falls through silently when the
+	// caller is anonymous or auth is disabled.
+	if sess, ok := sessionFromCtx(ctx); ok && sess != nil {
+		resp.Auth.Role = sess.Role
 	}
 	if s.deps.Hub != nil {
 		resp.Subscribers.SSE = s.deps.Hub.SubscriberCount()
@@ -118,8 +128,15 @@ func (s *Server) StatusSnapshot(ctx context.Context) any {
 	return s.buildStatusResponse(ctx)
 }
 
-// handleStatus serves GET /api/status. Public route.
+// handleStatus serves GET /api/status. Public route; if the request carries
+// a valid session cookie the response includes the session role so the SPA
+// can preserve admin-only UI across reloads. Anonymous requests still get a
+// 200 with role omitted.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	resp := s.buildStatusResponse(r.Context())
+	ctx := r.Context()
+	if sess, err := s.resolveSession(r); err == nil && sess != nil {
+		ctx = context.WithValue(ctx, ctxKeySession, sess)
+	}
+	resp := s.buildStatusResponse(ctx)
 	writeJSON(w, s.logger, http.StatusOK, resp)
 }

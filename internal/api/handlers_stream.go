@@ -48,7 +48,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	defer keepalive.Stop()
 
 	// Send a hello frame so the client immediately knows the stream is live.
-	writeSSEEvent(w, "hello", map[string]any{"time": time.Now()})
+	writeSSEEvent(w, MessageTypeHello, map[string]any{"time": time.Now()})
 	flusher.Flush()
 
 	for {

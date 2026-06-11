@@ -102,9 +102,12 @@ func corsMiddleware(allowed []string) func(http.Handler) http.Handler {
 }
 
 // noCacheAPI adds Cache-Control headers to every /api/ JSON response.
+// Skips /api/stream because SSE sets its own Cache-Control header
+// ("no-cache, no-transform") and Pragma: no-cache is redundant and
+// misleading on a streaming endpoint.
 func noCacheAPI(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/stream" {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Pragma", "no-cache")
 		}

@@ -145,6 +145,14 @@ linters:
 
   exclusions:
     rules:
+      - path: web/node_modules/
+        linters:
+          - govet
+          - gocritic
+          - gocyclo
+          - intrange
+          - modernize
+
       - path: _test\.go
         linters:
           - gosec

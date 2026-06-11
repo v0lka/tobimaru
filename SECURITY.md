@@ -114,7 +114,7 @@ Only the latest commit on `main` receives security attention. Once the first sta
 
 | Risk | Severity | Mitigation / Rationale |
 | --- | --- | --- |
-| No rate limiting on `/api/login` | Medium | Brute-force risk is mitigated by bcrypt cost and localhost-only default binding. Rate limiting will be added before enabling remote access. |
+| Login rate limiting is in-memory only (not persisted across restarts) | Low | Per-IP sliding-window rate limiter: 5 failures per 15 minutes triggers 15-minute lockout. Reset on successful login. Restarting the daemon clears the in-memory state. Adequate for localhost deployments; a persistent rate limiter should be added before enabling remote access. |
 | No TLS termination | Medium | Default bind is `127.0.0.1:8080`. Remote access requires a reverse proxy (nginx, Caddy) providing TLS. Documented in config comments. |
 | Runs as root | High | Inherent requirement for raw pcap capture and monitor mode. Mitigated by minimal attack surface (single binary, no child processes beyond airport/iw/ip). Future: consider capabilities-based privilege separation. |
 | `-hash-password` exposes plaintext in process list | Low | Utility flag; plaintext password is transient (appears only during hash generation). Callers should clear shell history after use. |
@@ -130,8 +130,9 @@ Only the latest commit on `main` receives security attention. Once the first sta
 ### Authentication & Authorization
 
 - **Authentication method:** Username+password via `POST /api/login`, verified against bcrypt hashes configured in YAML. When `api.auth.enabled: false`, all requests are treated as admin (development mode only).
+- **Brute-force protection:** In-memory per-IP sliding-window rate limiter in [`internal/api/auth.go`](internal/api/auth.go#L223-L313): 5 failures per 15-minute window triggers a 15-minute lockout. Successful login resets the counter. X-Forwarded-For is intentionally not honored to prevent spoofed throttling keys.
 - **Session management:** 32-byte CSPRNG opaque tokens (`crypto/rand`), persisted in SQLite `sessions` table with absolute expiration. Sessions are pruned every 5 minutes.
-- **Session cookies:** `tobimaru_session` — `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`. Deleted server-side on logout.
+- **Session cookies:** `tobimaru_session` — `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`. The `Secure` flag is `true` by default and configurable via `api.auth.cookie_secure` in YAML for local HTTP development. Deleted server-side on logout.
 - **Authorization model:** Two roles — `admin` (full access) and `user` (read-only). Role stored in session and checked via `requireAuth`/`requireAdmin` middleware in [`internal/api/auth.go`](internal/api/auth.go).
 - **Timing safety:** `crypto/subtle.ConstantTimeCompare` used for non-existent username comparison to prevent username enumeration.
 - **When auth is disabled:** `api.auth.enabled: false` synthesizes an admin session for every request. This mode is for local development only.
@@ -151,8 +152,8 @@ Only the latest commit on `main` receives security attention. Once the first sta
 
 ### Dependency Management
 
-- **Go:** Dependencies pinned via `go.sum` (67 lines). 4 direct dependencies: `yaml.v3`, `chi/v5`, `gopacket`, `golang.org/x/crypto`, `modernc.org/sqlite`. 32 transitive dependencies. Build with `-ldflags="-s -w"` for stripped binaries.
-- **Node.js:** Dependencies pinned via `package-lock.json`. 5 runtime deps (React 19, react-router-dom, recharts, js-yaml). 10 dev deps.
+- **Go:** Dependencies pinned via `go.sum`. 5 direct dependencies: `yaml.v3`, `chi/v5`, `gopacket`, `golang.org/x/crypto`, `modernc.org/sqlite`. 10 indirect dependencies. Build with `-ldflags="-s -w"` for stripped binaries.
+- **Node.js:** Dependencies pinned via `package-lock.json`. 6 runtime deps (React 19, react-router-dom, recharts, js-yaml, @xyflow/react). 11 dev deps.
 - **CI:** `go test -race` runs on every push/PR. Go lint via `golangci-lint` with `gosec` enabled.
 - **Preference:** `modernc.org/sqlite` chosen over cgo-based sqlite3 for auditability and cross-compilation (ADR 004).
 - **No automated vulnerability scanning** (Dependabot, Snyk, etc.) is configured yet.
@@ -228,7 +229,7 @@ These guidelines apply to ALL contributors: human developers, code reviewers, an
 ### Dependency & Supply Chain Rules
 
 - All Go dependencies pinned to exact versions via `go.sum`.
-- Dependencies minimized: 4 direct Go modules chosen for auditability and zero-CGO policy.
+- Dependencies minimized: 5 direct Go modules chosen for auditability and zero-CGO policy.
 - `modernc.org/sqlite` is a pure-Go SQLite implementation — eliminates cgo-related supply chain risk.
 - CI runs `go test -race` and `golangci-lint` (includes `gosec`) on every push/PR.
 - When adding a new dependency, justify it in the commit message or PR description.
@@ -306,4 +307,5 @@ The following actions are **FORBIDDEN** for any AI agent:
 
 | Date | Author | Change |
 | --- | --- | --- |
+| 2026-06-11 | @vkochetkov | Updated: login rate limiter (in-memory, per-IP), CookieSecure configurability, dependency counts (SPA: 6 runtime + 11 dev, Go: 5 direct + 10 indirect) |
 | 2026-06-06 | @vkochetkov | Initial security policy based on codebase audit of Phases 0–5 |

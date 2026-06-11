@@ -37,6 +37,7 @@ const (
 	errTypeStorageDisabled   = "storage_disabled"
 	errTypeStateDisabled     = "state_disabled"
 	errTypeDetectionDisabled = "detection_disabled"
+	errTypeRateLimited       = "rate_limited"
 )
 
 // writeProblem writes an RFC 7807-style JSON error response.

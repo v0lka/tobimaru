@@ -1,6 +1,9 @@
 package parser
 
 import (
+	"bytes"
+	"encoding/binary"
+	"net"
 	"os"
 	"testing"
 
@@ -567,6 +570,48 @@ func TestFrameTypeStringAll(t *testing.T) {
 	}
 }
 
+// TestHasBadFCS verifies the bad FCS detection logic on RadioTap headers.
+func TestHasBadFCS(t *testing.T) {
+	// Empty RadioTap.
+	if hasBadFCS(&layers.RadioTap{}) {
+		t.Error("empty RadioTap should not have bad FCS")
+	}
+
+	// Present and Values lengths mismatch (defensive).
+	if hasBadFCS(&layers.RadioTap{
+		Present:        []layers.RadioTapPresent{0},
+		RadioTapValues: []layers.RadioTapNamespace{},
+	}) {
+		t.Error("mismatched lengths should return false")
+	}
+
+	// Flags not present in Present[0].
+	if hasBadFCS(&layers.RadioTap{
+		Present:        []layers.RadioTapPresent{1}, // TSFT present, not Flags
+		RadioTapValues: []layers.RadioTapNamespace{{}},
+	}) {
+		t.Error("no Flags present should return false")
+	}
+
+	// Flags present but BadFCS not set.
+	if hasBadFCS(&layers.RadioTap{
+		Present:        []layers.RadioTapPresent{2}, // Flags present (bit 1)
+		RadioTapValues: []layers.RadioTapNamespace{{}},
+	}) {
+		t.Error("Flags present but BadFCS not set should return false")
+	}
+
+	// Flags present and BadFCS set.
+	if !hasBadFCS(&layers.RadioTap{
+		Present: []layers.RadioTapPresent{2},
+		RadioTapValues: []layers.RadioTapNamespace{{
+			Flags: layers.RadioTapFlagsBadFCS,
+		}},
+	}) {
+		t.Error("BadFCS set should return true")
+	}
+}
+
 // TestParseRadioTapEmpty verifies parseRadioTap handles a RadioTap header with
 // no Present flags or values without panicking.
 func TestParseRadioTapEmpty(t *testing.T) {
@@ -622,6 +667,143 @@ func TestParseIEForSSIDHidden(t *testing.T) {
 	}
 }
 
+// buildAssocReqPacket creates a gopacket.Packet containing a Radiotap +
+// Dot11 + Dot11MgmtAssociationReq with the given payload bytes.
+func buildAssocReqPacket(t *testing.T, payload []byte) gopacket.Packet {
+	t.Helper()
+
+	var buf bytes.Buffer
+	// Radiotap header (8 bytes, no fields).
+	binary.Write(&buf, binary.LittleEndian, uint8(0))   // version
+	binary.Write(&buf, binary.LittleEndian, uint8(0))   // pad
+	binary.Write(&buf, binary.LittleEndian, uint16(8))  // length
+	binary.Write(&buf, binary.LittleEndian, uint32(0))  // present (no fields)
+
+	// Dot11 header (24 bytes): AssocReq (type=Mgmt, subtype=AssocReq=0x00).
+	binary.Write(&buf, binary.LittleEndian, uint16(0x0000)) // FrameControl: Mgmt|AssocReq
+	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
+	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})  // Address1 (DA)
+	buf.Write([]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})  // Address2 (SA)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // Address3 (BSSID)
+	binary.Write(&buf, binary.LittleEndian, uint16(0))      // SequenceControl
+
+	// Dot11MgmtAssociationReq body (4 bytes): CapabilityInfo + ListenInterval.
+	binary.Write(&buf, binary.LittleEndian, uint16(0x0001)) // Capability (ESS)
+	binary.Write(&buf, binary.LittleEndian, uint16(10))     // ListenInterval
+
+	// Payload (IE bytes).
+	buf.Write(payload)
+
+	return gopacket.NewPacket(buf.Bytes(), layers.LinkTypeIEEE80211Radio, gopacket.Default)
+}
+
+// buildProbeReqPacket creates a gopacket.Packet containing a Radiotap +
+// Dot11 + Dot11MgmtProbeReq with the given payload bytes.
+func buildProbeReqPacket(t *testing.T, payload []byte) gopacket.Packet {
+	t.Helper()
+
+	var buf bytes.Buffer
+	// Radiotap header (8 bytes, no fields).
+	binary.Write(&buf, binary.LittleEndian, uint8(0))   // version
+	binary.Write(&buf, binary.LittleEndian, uint8(0))   // pad
+	binary.Write(&buf, binary.LittleEndian, uint16(8))  // length
+	binary.Write(&buf, binary.LittleEndian, uint32(0))  // present
+
+	// Dot11 header (24 bytes): ProbeReq (type=Mgmt, subtype=ProbeReq=0x04).
+	binary.Write(&buf, binary.LittleEndian, uint16(0x0040)) // FrameControl: Mgmt|ProbeReq
+	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
+	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})  // Address1 (DA)
+	buf.Write([]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})  // Address2 (SA)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // Address3 (BSSID)
+	binary.Write(&buf, binary.LittleEndian, uint16(0))      // SequenceControl
+
+	// Payload (IE bytes, ProbeReq has no own body fields).
+	buf.Write(payload)
+
+	return gopacket.NewPacket(buf.Bytes(), layers.LinkTypeIEEE80211Radio, gopacket.Default)
+}
+
+// TestExtractSSIDFromPayload verifies SSID extraction from both ProbeReq
+// and AssociationReq management frame payloads.
+func TestExtractSSIDFromPayload(t *testing.T) {
+	// AssocReq with SSID IE (Dot11MgmtAssociationReq.DecodeFromBytes sets
+	// Payload to the IE bytes after Capability+ListenInterval).
+	payload := []byte{0x00, 0x04, 'T', 'e', 's', 't'} // id=0(SSID), len=4, "Test"
+	pkt := buildAssocReqPacket(t, payload)
+	ssid, present := extractSSIDFromPayload(pkt)
+	if !present {
+		t.Error("expected SSID to be present in AssocReq")
+	}
+	if ssid != "Test" {
+		t.Errorf("got SSID %q, want %q", ssid, "Test")
+	}
+
+	// ProbeReq path: Dot11MgmtProbeReq.DecodeFromBytes does NOT set Payload,
+	// so LayerPayload() returns nil. The real SSID extraction for ProbeReq
+	// happens via dot11.LayerPayload() in Parse(). extractSSIDFromPayload
+	// is reached but returns ("", false) for ProbeReq.
+	pkt2 := buildProbeReqPacket(t, payload)
+	ssid2, present2 := extractSSIDFromPayload(pkt2)
+	if present2 {
+		t.Error("expected SSID not present via extractSSIDFromPayload for ProbeReq (LayerPayload is nil)")
+	}
+	if ssid2 != "" {
+		t.Errorf("got SSID %q, want empty", ssid2)
+	}
+
+	// Packet without management layers (should return "", false).
+	emptyPkt := gopacket.NewPacket([]byte{0x00}, layers.LinkTypeEthernet, gopacket.Default)
+	ssid3, present3 := extractSSIDFromPayload(emptyPkt)
+	if present3 {
+		t.Error("expected SSID not present for non-mgmt packet")
+	}
+	if ssid3 != "" {
+		t.Errorf("got SSID %q, want empty", ssid3)
+	}
+}
+
+// TestExtractIEsFromPayload verifies information element extraction from
+// management frame payloads via the extractIEsFromPayload function.
+func TestExtractIEsFromPayload(t *testing.T) {
+	// Build IE bytes: SSID(id=0,len=4,"WiFi") + SupportedRates(id=1,len=2,{0x82,0x84}).
+	payload := []byte{
+		0x00, 0x04, 'W', 'i', 'F', 'i',
+		0x01, 0x02, 0x82, 0x84,
+	}
+
+	// AssocReq path.
+	pkt := buildAssocReqPacket(t, payload)
+	f := &ParsedFrame{InfoElements: make(map[uint8][]byte)}
+	extractIEsFromPayload(f, pkt)
+	if len(f.InfoElements) != 2 {
+		t.Errorf("got %d IEs from AssocReq, want 2", len(f.InfoElements))
+	}
+	if string(f.InfoElements[0]) != "WiFi" {
+		t.Errorf("got SSID IE %q, want %q", f.InfoElements[0], "WiFi")
+	}
+	if len(f.InfoElements[1]) != 2 || f.InfoElements[1][0] != 0x82 {
+		t.Errorf("got SupportedRates IE %v, want [0x82 0x84]", f.InfoElements[1])
+	}
+
+	// ProbeReq path: Dot11MgmtProbeReq.DecodeFromBytes does NOT set Payload,
+	// so no IEs are extracted via this path. The real IE extraction happens
+	// via dot11.LayerPayload() in Parse().
+	pkt2 := buildProbeReqPacket(t, payload)
+	f2 := &ParsedFrame{InfoElements: make(map[uint8][]byte)}
+	extractIEsFromPayload(f2, pkt2)
+	if len(f2.InfoElements) != 0 {
+		t.Errorf("got %d IEs from ProbeReq, want 0 (LayerPayload is nil)", len(f2.InfoElements))
+	}
+
+	// Packet without management layers should be a no-op.
+	f3 := &ParsedFrame{InfoElements: make(map[uint8][]byte)}
+	emptyPkt := gopacket.NewPacket([]byte{0x00}, layers.LinkTypeEthernet, gopacket.Default)
+	extractIEsFromPayload(f3, emptyPkt)
+	if len(f3.InfoElements) != 0 {
+		t.Errorf("got %d IEs from non-mgmt packet, want 0", len(f3.InfoElements))
+	}
+}
+
 // TestParseSSIDPresentBeacon verifies SSIDPresent is set on a parsed beacon.
 func TestParseSSIDPresentBeacon(t *testing.T) {
 	pcapData := testutil.BuildBeaconPcap(testutil.SSID("VisibleNet"))
@@ -634,6 +816,168 @@ func TestParseSSIDPresentBeacon(t *testing.T) {
 	}
 	if frame.SSID != "VisibleNet" {
 		t.Errorf("got SSID %q, want VisibleNet", frame.SSID)
+	}
+}
+
+// TestIsUnicastMAC verifies unicast MAC address detection.
+func TestIsUnicastMAC(t *testing.T) {
+	// Valid unicast — LSb of first octet is 0.
+	if !isUnicastMAC(net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}) {
+		t.Error("expected unicast")
+	}
+	// Multicast — LSb of first octet is 1.
+	if isUnicastMAC(net.HardwareAddr{0x01, 0x00, 0x5e, 0x00, 0x00, 0x01}) {
+		t.Error("expected not unicast (multicast)")
+	}
+	// Broadcast.
+	if isUnicastMAC(net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}) {
+		t.Error("expected not unicast (broadcast)")
+	}
+	// Nil.
+	if isUnicastMAC(nil) {
+		t.Error("expected not unicast (nil)")
+	}
+	// Wrong length.
+	if isUnicastMAC(net.HardwareAddr{0x00, 0x11, 0x22}) {
+		t.Error("expected not unicast (wrong length)")
+	}
+}
+
+// TestAllZeroMAC verifies all-zero MAC detection.
+func TestAllZeroMAC(t *testing.T) {
+	if !allZeroMAC(net.HardwareAddr{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}) {
+		t.Error("expected all-zero to be detected")
+	}
+	if allZeroMAC(net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}) {
+		t.Error("expected not all-zero")
+	}
+	// Nil/empty — no bytes, so no non-zero bytes; treated as all-zero.
+	if !allZeroMAC(nil) {
+		t.Error("expected nil to be all-zero")
+	}
+	if !allZeroMAC(net.HardwareAddr{}) {
+		t.Error("expected empty to be all-zero")
+	}
+	// Partially zero.
+	if allZeroMAC(net.HardwareAddr{0x00, 0x00, 0x00, 0x00, 0x00, 0x01}) {
+		t.Error("expected not all-zero when last byte is non-zero")
+	}
+}
+
+// TestIsBroadcastMAC verifies broadcast MAC detection.
+func TestIsBroadcastMAC(t *testing.T) {
+	bcast := net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
+	if !isBroadcastMAC(bcast) {
+		t.Error("expected broadcast")
+	}
+	if isBroadcastMAC(net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xfe}) {
+		t.Error("expected not broadcast (last byte differs)")
+	}
+	if isBroadcastMAC(nil) {
+		t.Error("expected nil to not be broadcast")
+	}
+	if isBroadcastMAC(net.HardwareAddr{0xff, 0xff, 0xff}) {
+		t.Error("expected wrong length to not be broadcast")
+	}
+}
+
+// TestIsValidSSID verifies SSID validation rules.
+func TestIsValidSSID(t *testing.T) {
+	if !isValidSSID("MyWiFi") {
+		t.Error("expected valid SSID")
+	}
+	if !isValidSSID("") {
+		t.Error("expected empty SSID to be valid")
+	}
+	// Too long (>32 bytes).
+	if isValidSSID("abcdefghijklmnopqrstuvwxyz1234567") { // 33 chars
+		t.Error("expected too-long SSID to be invalid")
+	}
+	// Control character.
+	if isValidSSID("bad\x01ssid") {
+		t.Error("expected SSID with control char to be invalid")
+	}
+	// DEL character (0x7F).
+	if isValidSSID("bad\x7fssid") {
+		t.Error("expected SSID with DEL char to be invalid")
+	}
+	// Valid UTF-8 multi-byte SSID.
+	if !isValidSSID("café-ネット") {
+		t.Error("expected UTF-8 SSID to be valid")
+	}
+}
+
+// TestValidateParsedFrame covers additional validation paths.
+func TestValidateParsedFrame(t *testing.T) {
+	mac1, _ := net.ParseMAC("00:11:22:33:44:55")
+	mac2, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	bcast, _ := net.ParseMAC("ff:ff:ff:ff:ff:ff")
+
+	// Beacon: SrcMAC != BSSID → reject.
+	f := &ParsedFrame{FrameType: FrameTypeBeacon, BSSID: mac2, SrcMAC: mac1, DstMAC: bcast, BeaconInterval: 100}
+	if validateParsedFrame(f) {
+		t.Error("beacon with mismatched SrcMAC/BSSID should be rejected")
+	}
+
+	// Beacon: beacon interval 0 → reject.
+	f = &ParsedFrame{FrameType: FrameTypeBeacon, BSSID: mac2, SrcMAC: mac2, DstMAC: bcast, BeaconInterval: 0}
+	if validateParsedFrame(f) {
+		t.Error("beacon with zero interval should be rejected")
+	}
+
+	// Beacon: non-broadcast DstMAC → reject.
+	f = &ParsedFrame{FrameType: FrameTypeBeacon, BSSID: mac2, SrcMAC: mac2, DstMAC: mac1, BeaconInterval: 100}
+	if validateParsedFrame(f) {
+		t.Error("beacon with non-broadcast DstMAC should be rejected")
+	}
+
+	// AssocReq: nil SrcMAC → reject.
+	f = &ParsedFrame{FrameType: FrameTypeAssocReq, SrcMAC: nil, DstMAC: mac2}
+	if validateParsedFrame(f) {
+		t.Error("assoc req with nil SrcMAC should be rejected")
+	}
+
+	// AssocReq: all-zero DstMAC → reject.
+	zeroMAC, _ := net.ParseMAC("00:00:00:00:00:00")
+	f = &ParsedFrame{FrameType: FrameTypeAssocReq, SrcMAC: mac1, DstMAC: zeroMAC}
+	if validateParsedFrame(f) {
+		t.Error("assoc req with all-zero DstMAC should be rejected")
+	}
+
+	// Auth: valid frame.
+	f = &ParsedFrame{FrameType: FrameTypeAuth, SrcMAC: mac1, DstMAC: mac2}
+	if !validateParsedFrame(f) {
+		t.Error("valid auth frame should pass")
+	}
+
+	// ReassocReq: valid frame.
+	f = &ParsedFrame{FrameType: FrameTypeReassocReq, SrcMAC: mac1, DstMAC: mac2}
+	if !validateParsedFrame(f) {
+		t.Error("valid reassoc req frame should pass")
+	}
+
+	// Data: nil SrcMAC → reject.
+	f = &ParsedFrame{FrameType: FrameTypeData, SrcMAC: nil, DstMAC: mac2}
+	if validateParsedFrame(f) {
+		t.Error("data frame with nil SrcMAC should be rejected")
+	}
+
+	// QoSData: all-zero DstMAC → reject.
+	f = &ParsedFrame{FrameType: FrameTypeQoSData, SrcMAC: mac1, DstMAC: zeroMAC}
+	if validateParsedFrame(f) {
+		t.Error("qos data with all-zero DstMAC should be rejected")
+	}
+
+	// Unknown frame type should pass.
+	f = &ParsedFrame{FrameType: FrameTypeUnknown}
+	if !validateParsedFrame(f) {
+		t.Error("unknown frame type should pass validation")
+	}
+
+	// Deauth should pass (no additional validation).
+	f = &ParsedFrame{FrameType: FrameTypeDeauth}
+	if !validateParsedFrame(f) {
+		t.Error("deauth should pass validation")
 	}
 }
 

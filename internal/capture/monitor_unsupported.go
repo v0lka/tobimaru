@@ -19,4 +19,7 @@ func (m *unsupportedMonitor) DisableMonitor(_ context.Context, _ string) error {
 func (m *unsupportedMonitor) SetChannel(_ context.Context, _ string, _ int) error {
 	return ErrNotSupported
 }
+func (m *unsupportedMonitor) SupportedChannels(_ context.Context, _ string) ([]int, error) {
+	return nil, ErrNotSupported
+}
 func (m *unsupportedMonitor) IsSupported() bool { return false }

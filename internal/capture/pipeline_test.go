@@ -1,12 +1,16 @@
 package capture
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 	"github.com/vkochetkov/tobimaru/internal/config"
 	"github.com/vkochetkov/tobimaru/internal/parser"
 	"github.com/vkochetkov/tobimaru/internal/platform"
@@ -78,6 +82,9 @@ func (m *mockMonitor) IsSupported() bool                                   { ret
 func (m *mockMonitor) EnableMonitor(_ context.Context, _ string) error     { return m.enableErr }
 func (m *mockMonitor) DisableMonitor(_ context.Context, _ string) error    { return m.disableErr }
 func (m *mockMonitor) SetChannel(_ context.Context, _ string, _ int) error { return m.setChanErr }
+func (m *mockMonitor) SupportedChannels(_ context.Context, _ string) ([]int, error) {
+	return nil, nil
+}
 
 func TestPipelineFrames(t *testing.T) {
 	frames := make(chan *parser.ParsedFrame, 10)
@@ -268,5 +275,149 @@ func TestNewPipelineCreation(t *testing.T) {
 	}
 	if p.Frames() == nil {
 		t.Error("expected non-nil frames channel")
+	}
+}
+
+func TestPick(t *testing.T) {
+	if got := pick(true, "a", "b"); got != "a" {
+		t.Errorf("pick(true) = %q, want %q", got, "a")
+	}
+	if got := pick(false, "a", "b"); got != "b" {
+		t.Errorf("pick(false) = %q, want %q", got, "b")
+	}
+}
+
+func TestFilterBand(t *testing.T) {
+	channels := []int{1, 6, 11, 36, 48, 149, 161}
+	got := filterBand(channels, 1, 14)
+	if len(got) != 3 {
+		t.Errorf("expected 3 channels in 2.4 GHz band, got %d: %v", len(got), got)
+	}
+	got = filterBand(channels, 36, 200)
+	if len(got) != 4 {
+		t.Errorf("expected 4 channels in 5 GHz band, got %d: %v", len(got), got)
+	}
+	got = filterBand([]int{}, 1, 14)
+	if len(got) != 0 {
+		t.Errorf("expected 0 channels for empty input, got %d", len(got))
+	}
+}
+
+func TestIntersectChannels(t *testing.T) {
+	configured := []int{1, 6, 11, 36, 48}
+	supported := []int{1, 6, 36, 149}
+	got := intersectChannels(configured, supported)
+	if len(got) != 3 {
+		t.Errorf("expected 3 intersecting channels, got %d: %v", len(got), got)
+	}
+	// Empty inputs.
+	if got := intersectChannels(nil, supported); got != nil {
+		t.Errorf("nil configured should return nil, got %v", got)
+	}
+	if got := intersectChannels(configured, nil); len(got) != 5 {
+		t.Errorf("nil supported should return all configured, got %v", got)
+	}
+}
+
+func TestPipelineCurrentChannel_NoHopper(t *testing.T) {
+	p := &Pipeline{config: &config.Config{}}
+	if ch := p.CurrentChannel(); ch != 0 {
+		t.Errorf("expected 0 without hopper, got %d", ch)
+	}
+}
+
+func TestPipelineCurrentChannel_WithHopper(t *testing.T) {
+	hopper, err := NewChannelHopper(&config.ChannelHoppingConfig{
+		Enabled:      true,
+		Dwell:        100 * time.Millisecond,
+		Channels2GHz: []int{1, 6},
+	})
+	if err != nil {
+		t.Fatalf("NewChannelHopper: %v", err)
+	}
+	p := &Pipeline{
+		config: &config.Config{},
+		hopper: hopper,
+	}
+	// Before Next is called, CurrentChannel returns 0.
+	if ch := p.CurrentChannel(); ch != 0 {
+		t.Errorf("expected 0 before first hop, got %d", ch)
+	}
+	// After Next, it reflects the last channel.
+	hopper.Next()
+	if ch := p.CurrentChannel(); ch != 1 {
+		t.Errorf("expected 1 after first hop, got %d", ch)
+	}
+}
+
+func TestLogCapabilities_NoFrameInjection(t *testing.T) {
+	logger := slog.Default()
+	caps := platform.Capabilities{
+		MonitorMode:    true,
+		FrameInjection: false,
+		ChannelHopping: true,
+		MaxChannels:    14,
+	}
+	logCapabilities(logger, caps) // should log "not available" message
+}
+
+func TestLogCapabilities_WithLimitations(t *testing.T) {
+	logger := slog.Default()
+	caps := platform.Capabilities{
+		MonitorMode:    true,
+		FrameInjection: false,
+		ChannelHopping: false,
+		MaxChannels:    0,
+		SlowHopping:    true,
+		SingleAdapter:  true,
+	}
+	logCapabilities(logger, caps) // should log limitation warnings
+}
+
+// buildMinimalDot11Packet returns a valid Radiotap+Dot11 Beacon packet.
+func buildMinimalDot11Packet(t *testing.T) gopacket.Packet {
+	t.Helper()
+	var buf bytes.Buffer
+	// Radiotap (8 bytes, no fields).
+	binary.Write(&buf, binary.LittleEndian, uint8(0))
+	binary.Write(&buf, binary.LittleEndian, uint8(0))
+	binary.Write(&buf, binary.LittleEndian, uint16(8))
+	binary.Write(&buf, binary.LittleEndian, uint32(0))
+	// Dot11 beacon (24 bytes): type=Mgmt, subtype=Beacon=0x08.
+	binary.Write(&buf, binary.LittleEndian, uint16(0x0080)) // FC
+	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
+	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})  // DA (broadcast for beacon)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // SA (== BSSID for beacon)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // BSSID
+	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Seq
+	// Beacon body: timestamp(8) + interval(2) + flags(2).
+	body := make([]byte, 12)
+	binary.LittleEndian.PutUint16(body[8:10], 100) // beacon interval
+	buf.Write(body)
+	return gopacket.NewPacket(buf.Bytes(), layers.LinkTypeIEEE80211Radio, gopacket.Default)
+}
+
+func TestSafeParse(t *testing.T) {
+	// Valid 802.11 packet should parse without error.
+	pkt := buildMinimalDot11Packet(t)
+	frame, err := safeParse(pkt)
+	if err != nil {
+		t.Fatalf("safeParse returned error: %v", err)
+	}
+	if frame == nil {
+		t.Fatal("expected non-nil frame")
+	}
+	if frame.FrameType != parser.FrameTypeBeacon {
+		t.Errorf("got %v, want FrameTypeBeacon", frame.FrameType)
+	}
+
+	// Non-802.11 packet should return error, not panic.
+	badPkt := gopacket.NewPacket([]byte{0x00, 0x01, 0x02}, layers.LinkTypeEthernet, gopacket.Default)
+	frame2, err2 := safeParse(badPkt)
+	if err2 == nil {
+		t.Error("expected error for non-Dot11 packet")
+	}
+	if frame2 != nil {
+		t.Error("expected nil frame for parse error")
 	}
 }

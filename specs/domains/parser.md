@@ -48,6 +48,7 @@ type ParsedFrame struct {
     DstMAC         net.HardwareAddr
     BSSID          net.HardwareAddr
     SSID           string
+    SSIDPresent    bool             // true when an SSID IE was observed (even if length 0 = hidden)
     Channel        int
     ChannelFreq    int
     RSSI           int
@@ -80,7 +81,8 @@ Parse(packet)
   │
   ├─► Extract RadioTap layer
   │     ├─ RSSI from DBMAntennaSignal
-  │     └─ Channel frequency from Channel
+  │     ├─ Channel frequency from Channel
+  │     └─ BadFCS check: reject immediately if Flags.BadFCS is set
   │
   ├─► Extract Dot11 layer (required)
   │     ├─ Source, destination, BSSID MACs
@@ -102,7 +104,15 @@ Parse(packet)
   ├─► Fallback IE parsing from Dot11 layer payload
   │     └─ For probe/assoc frames where gopacket doesn't decode IEs
   │
-  └─► Convert frequency to channel number via freqToChannel()
+  ├─► Convert frequency to channel number via freqToChannel()
+  │
+  └─► Post-classification validation (validateParsedFrame)
+        ├─ Rejects frames with garbage physical-layer fields
+        ├─ Beacon: SrcMAC must equal BSSID, DstMAC must be broadcast
+        ├─ ProbeResponse: SrcMAC must equal BSSID, DstMAC non-zero
+        ├─ Beacon/ProbeResponse: SSID must be valid UTF-8 with no control chars
+        ├─ All management: SrcMAC must be unicast, DstMAC non-zero
+        └─ Returns errFrameRejected (unexported sentinel) on failure
 ```
 
 ## Invariants
@@ -115,12 +125,22 @@ Parse(packet)
 - Information Elements are extracted from gopacket-decoded layers first, then fall back to manual parsing from Dot11 layer payload for probe request and association request frames (where gopacket does not automatically decode IEs)
 - SSID is extracted: gopacket IE layers first, then manual payload parsing if not found
 - Channel is derived from frequency if not directly reported in RadioTap
+- `validateParsedFrame()` runs after classification and rejects frames whose physical-layer fields are clearly garbage — essential on macOS where variable-length radiotap headers can cause BPF filters to pass non‑802.11 noise
+- Beacons always have SrcMAC == BSSID and DstMAC == broadcast (ff:ff:ff:ff:ff:ff) — per 802.11 §9.3.3.2; any beacon violating this is rejected
+- Probe responses always have SrcMAC == BSSID; any probe response violating this is rejected
+- All management frames require a unicast SrcMAC; broadcast or multicast sources indicate garbage
+- Beacon interval must be non-zero and ≤ 10000 TU (~10.24 s); garbage frames typically have 0 or implausible values
+- `errFrameRejected` is unexported — callers treat it identically to any other parse error and drop the frame
+- Frames with RadioTap `BadFCS` flag set are rejected before Dot11 extraction — in RFMON mode the NIC delivers all frames regardless of CRC validity; bad-FCS frames have structurally valid headers but corrupted bodies (garbled SSIDs)
+- Beacon and probe response SSIDs must be valid UTF-8, contain no ASCII control characters (0x00–0x1F, 0x7F), and be ≤ 32 bytes — frames failing this check are corrupted (bad FCS that slipped past radiotap check, or partial captures during channel hops)
 
 ## Error Handling
 
+- RadioTap `BadFCS` flag set → returns `errBadFCS` immediately (before Dot11 extraction)
 - Missing Dot11 layer → returns error immediately
 - Missing RadioTap layer → frame proceeds without RSSI/channel values (zero values)
 - Failed subtype-specific layer cast → subtype fields remain at zero values, no error
+- `validateParsedFrame()` failure → returns `errFrameRejected` (unexported sentinel, indistinguishable from other parse errors for callers)
 - IE parsing always succeeds (robust to malformed payloads with bounds checking)
 
 ## Configuration

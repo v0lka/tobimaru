@@ -7,6 +7,7 @@ import EventsPage from "./pages/Events";
 import StatsPage from "./pages/Stats";
 import SettingsPage from "./pages/Settings";
 import StatusPage from "./pages/Status";
+import logoUrl from "./assets/logo-128.png";
 
 const TABS: { to: string; label: string }[] = [
   { to: "/map", label: "Map" },
@@ -20,7 +21,7 @@ export default function App() {
   const { role, authChecked, authRequired, logout } = useAuth();
 
   if (!authChecked) {
-    return <div className="flex items-center justify-center min-h-screen text-slate-400">Loading…</div>;
+    return <div className="flex items-center justify-center min-h-screen text-muted">Loading…</div>;
   }
   if (authRequired && !role) {
     return <Login />;
@@ -28,9 +29,20 @@ export default function App() {
 
   return (
     <div>
-      <header className="bg-bg2 border-b border-border px-6 py-3 flex items-center gap-4">
-        <div className="font-bold text-accent">🌊 Tobimaru</div>
-        <nav className="flex gap-2 flex-1">
+      <header className="relative z-10 bg-bg2 border-b border-border px-6 py-3 flex items-center gap-4">
+        <div className="flex items-center gap-2 font-bold text-fg">
+          <img
+            src={logoUrl}
+            alt="Tobimaru"
+            width={48}
+            height={48}
+            className="w-12 h-12 rounded-sm -my-2 relative top-1"
+          />
+          <span className="tracking-wide">
+            Tobi<span className="text-mono-yellow">maru</span>
+          </span>
+        </div>
+        <nav className="flex gap-1 flex-1">
           {TABS.map((t) => (
             <NavLink
               key={t.to}
@@ -43,7 +55,7 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <div className="flex items-center gap-3 text-slate-400">
+        <div className="flex items-center gap-3 text-muted">
           {role && <span className="pill-muted">{role}</span>}
           {authRequired && (
             <button className="btn" onClick={logout}>

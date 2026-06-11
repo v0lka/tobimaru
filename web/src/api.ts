@@ -18,6 +18,8 @@ export interface APInfo {
   channel: number;
   rssi: number;
   beacon_count: number;
+  beacon_interval: number;
+  capability: number;
   first_seen: string;
   last_seen: string;
 }
@@ -45,7 +47,10 @@ export interface SecurityEvent {
   ssid?: string;
   channel: number;
   rssi: number;
+  frame_count?: number;
+  duration_ms?: number;
   description?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface StatusResponse {
@@ -63,7 +68,7 @@ export interface StatusResponse {
   detection: { enabled: boolean; rules: number; dedup_window_ns: number };
   state: { enabled: boolean; ttl_ns: number; sweep_interval_ns: number };
   storage: { enabled: boolean };
-  auth: { enabled: boolean };
+  auth: { enabled: boolean; role?: "admin" | "user" };
   subscribers: { sse: number };
 }
 

@@ -54,6 +54,9 @@ type Server struct {
 	// statsMu guards statsCache for the 30-second stats caching window.
 	statsMu    sync.Mutex
 	statsCache *statsCacheEntry
+
+	// loginLimiter throttles failed login attempts on a per-IP basis.
+	loginLimiter *loginRateLimiter
 }
 
 // NewServer builds a Server with the provided configuration and dependencies.
@@ -69,9 +72,10 @@ func NewServer(cfg config.APIConfig, deps Deps) (*Server, error) {
 		return nil, errors.New("api: auth.enabled requires storage.enabled (Deps.Repo is nil)")
 	}
 	s := &Server{
-		cfg:    cfg,
-		deps:   deps,
-		logger: deps.Logger.With("component", "api"),
+		cfg:          cfg,
+		deps:         deps,
+		logger:       deps.Logger.With("component", "api"),
+		loginLimiter: newLoginRateLimiter(),
 	}
 	s.detectionEnabled.Store(deps.Config.Detection.Enabled)
 	s.router = s.buildRouter()
@@ -203,4 +207,11 @@ func (s *Server) shutdownInternal() error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
 	defer cancel()
 	return s.Shutdown(ctx)
+}
+
+// SetDetectionEnabled updates the runtime detection toggle and persists the
+// change to the in-memory atomic flag that /api/status reports. Used during
+// startup to restore the persisted value from the KV store.
+func (s *Server) SetDetectionEnabled(v bool) {
+	s.detectionEnabled.Store(v)
 }

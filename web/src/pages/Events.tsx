@@ -52,14 +52,19 @@ export default function EventsPage() {
     }
   }, [severity, eventType, events.length]);
 
+  const SEV_ORDER: Record<string, number> = { info: 0, warning: 1, critical: 2 };
+
   useSSE(
     useCallback(
       (eventName, data) => {
         if (eventName !== "event") return;
-        setEvents((prev) => [data as SecurityEvent, ...prev].slice(0, 1000));
+        const ev = data as SecurityEvent;
+        if (severity && (SEV_ORDER[ev.severity] ?? -1) < SEV_ORDER[severity]) return;
+        if (eventType && ev.event_type !== eventType) return;
+        setEvents((prev) => [ev, ...prev].slice(0, 1000));
         setTotal((t) => t + 1);
       },
-      [],
+      [severity, eventType],
     ),
   );
 

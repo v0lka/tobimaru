@@ -71,7 +71,7 @@ cmd/tobimaru (entry point, orchestrator)
     │       ├──► internal/detector   (for SecurityEvent)
     │       └──► internal/state      (for APInfo, ClientInfo, etc.)
     │
-    ├──► internal/api           [depends on internal/{config,state,storage,detector,capture,version,logging}]
+    ├──► internal/api           [depends on internal/{config,state,storage,detector,capture,platform,version,logging}]
     │       │
     │       ├──► internal/api/web    (embedded SPA via go:embed)
     │       └── chi/v5 + golang.org/x/crypto/bcrypt

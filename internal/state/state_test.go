@@ -301,6 +301,153 @@ func TestEngine_ProcessFrame_DeauthFromClient(t *testing.T) {
 // TestEngine_ConcurrentProcessAndSnapshot verifies that ProcessFrame,
 // Snapshot, and RunEviction can run concurrently without data races. Run
 // with `-race` to validate.
+func TestEngine_ProcessFrame_AssocResponseSuccess(t *testing.T) {
+	e := newTestEngine()
+	clientMAC, _ := net.ParseMAC("11:22:33:44:55:66")
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+	now := time.Now()
+
+	// First create the client via an assoc request.
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeAssocReq,
+		Timestamp: now,
+		SrcMAC:    clientMAC,
+		BSSID:     bssid,
+		SSID:      "TestNet",
+		Channel:   6,
+	})
+
+	// Successful assoc response (status=0).
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeAssocResp,
+		Timestamp: now.Add(time.Second),
+		DstMAC:    clientMAC,
+		BSSID:     bssid,
+		Status:    0,
+	})
+
+	c, _ := e.Clients().Get(clientMAC)
+	if !c.Associated {
+		t.Error("expected client to remain associated after successful assoc response")
+	}
+}
+
+func TestEngine_ProcessFrame_AssocResponseFailed(t *testing.T) {
+	e := newTestEngine()
+	clientMAC, _ := net.ParseMAC("11:22:33:44:55:66")
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+	now := time.Now()
+
+	// Create the client.
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeAssocReq,
+		Timestamp: now,
+		SrcMAC:    clientMAC,
+		BSSID:     bssid,
+		SSID:      "TestNet",
+		Channel:   6,
+	})
+
+	// Failed assoc response (status != 0) — should be ignored.
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeAssocResp,
+		Timestamp: now.Add(time.Second),
+		DstMAC:    clientMAC,
+		BSSID:     bssid,
+		Status:    1,
+	})
+
+	c, _ := e.Clients().Get(clientMAC)
+	if !c.Associated {
+		t.Error("client should still be associated (failed response is ignored)")
+	}
+}
+
+func TestEngine_ProcessFrame_DataFrameFromDS(t *testing.T) {
+	e := newTestEngine()
+	clientMAC, _ := net.ParseMAC("11:22:33:44:55:66")
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+	now := time.Now()
+
+	// AP→client data frame (FromDS=1, ToDS=0). DstMAC=client, SrcMAC=BSSID.
+	frame := &parser.ParsedFrame{
+		FrameType: parser.FrameTypeData,
+		Timestamp: now,
+		SrcMAC:    bssid,
+		DstMAC:    clientMAC,
+		ToDS:      false,
+		FromDS:    true,
+		Channel:   11,
+		RSSI:      -55,
+	}
+
+	e.ProcessFrame(frame)
+
+	if e.Clients().Len() != 1 {
+		t.Fatalf("expected 1 client, got %d", e.Clients().Len())
+	}
+	c, _ := e.Clients().Get(clientMAC)
+	if c.FrameCount != 1 {
+		t.Errorf("expected FrameCount 1, got %d", c.FrameCount)
+	}
+}
+
+func TestProcessFrame_BeaconNilBSSID(t *testing.T) {
+	e := newTestEngine()
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeBeacon,
+		Timestamp: time.Now(),
+		BSSID:     nil,
+		SSID:      "X",
+	})
+	if e.APs().Len() != 0 {
+		t.Error("nil BSSID beacon should be ignored")
+	}
+}
+
+func TestIsBroadcast(t *testing.T) {
+	if isBroadcast(nil) {
+		t.Error("nil should not be broadcast")
+	}
+	shortMAC, _ := net.ParseMAC("aa:bb:cc")
+	if isBroadcast(shortMAC) {
+		t.Error("short MAC should not be broadcast")
+	}
+	bcast, _ := net.ParseMAC("ff:ff:ff:ff:ff:ff")
+	if !isBroadcast(bcast) {
+		t.Error("ff:ff:ff:ff:ff:ff should be broadcast")
+	}
+	notBcast, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	if isBroadcast(notBcast) {
+		t.Error("aa:bb:cc:dd:ee:ff should not be broadcast")
+	}
+}
+
+func TestCopyIEs_NonEmpty(t *testing.T) {
+	original := map[uint8][]byte{
+		1: {0x01, 0x02},
+		3: {0x03},
+	}
+	cp := copyIEs(original)
+	if len(cp) != 2 {
+		t.Errorf("expected 2 IEs, got %d", len(cp))
+	}
+	// Mutate original to verify deep copy.
+	original[1][0] = 0xFF
+	if cp[1][0] == 0xFF {
+		t.Error("copy should be independent of original")
+	}
+}
+
+func TestCopyIEs_Empty(t *testing.T) {
+	if got := copyIEs(nil); got != nil {
+		t.Error("copyIEs(nil) should return nil")
+	}
+	if got := copyIEs(map[uint8][]byte{}); got != nil {
+		t.Error("copyIEs(empty) should return nil")
+	}
+}
+
 func TestEngine_ConcurrentProcessAndSnapshot(t *testing.T) {
 	cfg := config.StateConfig{
 		Enabled:       true,
@@ -389,4 +536,182 @@ func TestEngine_ConcurrentProcessAndSnapshot(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	cancel()
 	wg.Wait()
+}
+
+// TestIsValidBSSID verifies BSSID validation logic.
+func TestIsValidBSSID(t *testing.T) {
+	// Nil — wrong length.
+	if isValidBSSID(nil) {
+		t.Error("nil should not be valid BSSID")
+	}
+	// Wrong length.
+	if isValidBSSID(net.HardwareAddr{0x00, 0x11, 0x22}) {
+		t.Error("short MAC should not be valid BSSID")
+	}
+	// Broadcast.
+	bcast, _ := net.ParseMAC("ff:ff:ff:ff:ff:ff")
+	if isValidBSSID(bcast) {
+		t.Error("broadcast should not be valid BSSID")
+	}
+	// Multicast (bit 0 of first byte = 1).
+	mcast, _ := net.ParseMAC("01:00:5e:00:00:01")
+	if isValidBSSID(mcast) {
+		t.Error("multicast should not be valid BSSID")
+	}
+	// All-zero.
+	zeros, _ := net.ParseMAC("00:00:00:00:00:00")
+	if isValidBSSID(zeros) {
+		t.Error("all-zero should not be valid BSSID")
+	}
+	// Valid unicast.
+	valid, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	if !isValidBSSID(valid) {
+		t.Error("valid unicast MAC should be valid BSSID")
+	}
+}
+
+// TestProcessFrame_ProbeResponse verifies probe response processing.
+func TestProcessFrame_ProbeResponse(t *testing.T) {
+	e := newTestEngine()
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+	now := time.Now()
+
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeProbeResponse,
+		Timestamp: now,
+		BSSID:     bssid,
+		SSID:      "ResponseNet",
+		Channel:   6,
+		RSSI:      -50,
+	})
+
+	if e.APs().Len() != 1 {
+		t.Fatalf("expected 1 AP, got %d", e.APs().Len())
+	}
+	ap, _ := e.APs().Get(bssid)
+	if ap.SSID != "ResponseNet" {
+		t.Errorf("expected SSID 'ResponseNet', got %q", ap.SSID)
+	}
+}
+
+// TestProcessFrame_ProbeResponseNilBSSID verifies nil BSSID is rejected.
+func TestProcessFrame_ProbeResponseNilBSSID(t *testing.T) {
+	e := newTestEngine()
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeProbeResponse,
+		Timestamp: time.Now(),
+		BSSID:     nil,
+		SSID:      "X",
+	})
+	if e.APs().Len() != 0 {
+		t.Error("nil BSSID probe response should be ignored")
+	}
+}
+
+// TestProcessFrame_ProbeRequestExistingClient verifies updating an existing client.
+func TestProcessFrame_ProbeRequestExistingClient(t *testing.T) {
+	e := newTestEngine()
+	clientMAC, _ := net.ParseMAC("11:22:33:44:55:66")
+	now := time.Now()
+
+	// First probe creates the client.
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeProbeRequest,
+		Timestamp: now,
+		SrcMAC:    clientMAC,
+		SSID:      "FirstNet",
+		Channel:   6,
+		RSSI:      -60,
+	})
+
+	// Second probe with different SSID updates existing client.
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeProbeRequest,
+		Timestamp: now.Add(time.Second),
+		SrcMAC:    clientMAC,
+		SSID:      "SecondNet",
+		Channel:   11,
+		RSSI:      -55,
+	})
+
+	c, _ := e.Clients().Get(clientMAC)
+	if len(c.ProbeSSIDs) != 2 {
+		t.Errorf("expected 2 ProbeSSIDs, got %d: %v", len(c.ProbeSSIDs), c.ProbeSSIDs)
+	}
+	if c.Channel != 11 {
+		t.Errorf("expected channel 11, got %d", c.Channel)
+	}
+	if c.RSSI != -55 {
+		t.Errorf("expected RSSI -55, got %d", c.RSSI)
+	}
+}
+
+// TestProcessFrame_AssocRequestNilSrcMAC verifies nil SrcMAC guard.
+func TestProcessFrame_AssocRequestNilSrcMAC(t *testing.T) {
+	e := newTestEngine()
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeAssocReq,
+		Timestamp: time.Now(),
+		SrcMAC:    nil,
+		BSSID:     bssid,
+		SSID:      "TestNet",
+	})
+	if e.Clients().Len() != 0 {
+		t.Error("nil SrcMAC assoc request should be ignored")
+	}
+}
+
+// TestProcessFrame_AssocResponseNilDstMAC verifies nil DstMAC guard.
+func TestProcessFrame_AssocResponseNilDstMAC(t *testing.T) {
+	e := newTestEngine()
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeAssocResp,
+		Timestamp: time.Now(),
+		DstMAC:    nil,
+		BSSID:     bssid,
+		Status:    0,
+	})
+	// Should not panic — just verify no crash.
+}
+
+// TestProcessFrame_DataFrameIBSS verifies IBSS (ToDS=0, FromDS=0) is skipped.
+func TestProcessFrame_DataFrameIBSS(t *testing.T) {
+	e := newTestEngine()
+	clientMAC, _ := net.ParseMAC("11:22:33:44:55:66")
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeData,
+		Timestamp: time.Now(),
+		SrcMAC:    clientMAC,
+		DstMAC:    bssid,
+		ToDS:      false,
+		FromDS:    false,
+		Channel:   6,
+	})
+	if e.Clients().Len() != 0 {
+		t.Error("IBSS data frame should be skipped")
+	}
+}
+
+// TestProcessFrame_DataFrameBroadcastClient verifies broadcast client is skipped.
+func TestProcessFrame_DataFrameBroadcastClient(t *testing.T) {
+	e := newTestEngine()
+	bcast, _ := net.ParseMAC("ff:ff:ff:ff:ff:ff")
+	bssid, _ := net.ParseMAC("AA:BB:CC:DD:EE:FF")
+
+	e.ProcessFrame(&parser.ParsedFrame{
+		FrameType: parser.FrameTypeData,
+		Timestamp: time.Now(),
+		SrcMAC:    bcast,
+		DstMAC:    bssid,
+		ToDS:      true,
+		FromDS:    false,
+		Channel:   6,
+	})
+	if e.Clients().Len() != 0 {
+		t.Error("broadcast client data frame should be skipped")
+	}
 }

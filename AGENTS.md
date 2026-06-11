@@ -6,7 +6,7 @@ This file provides guidance for AI coding agents working on this project.
 
 Tobimaru is a Go-based WiFi intrusion detection system (WIDS). It operates as a daemon that monitors wireless traffic, detects attacks, and provides monitoring through a REST API and an embedded React 19 web dashboard — all in a single binary.
 
-The project follows Phases (0–12) as defined in `docs/development/wifi-watchdog-roadmap.md`. Phases 0–5 (mandatory) are complete. Phase 2 detection rules (2.3–2.7) are the next deliverable.
+The project follows Phases (0–12) as defined in `docs/development/wifi-watchdog-roadmap.md`. Phases 0–5 (mandatory) are complete.
 
 ## Project Status
 
@@ -14,10 +14,10 @@ The project follows Phases (0–12) as defined in `docs/development/wifi-watchdo
 |-------|--------|-------------|
 | 0 | ✅ Complete | Foundation (config, logging, shutdown, version, CI) |
 | 1 | ✅ Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing) |
-| 2 | 🚧 In Progress | Detection Engine (rule interface, dedup, event model done; specific rules upcoming) |
+| 2 | ✅ Complete | Detection Engine (rule interface, dedup, event model, and concrete rules: deauth/disassoc/beacon flood, evil twin, unauthorized device — all with unit + pcap integration tests) |
 | 3 | ✅ Complete | Network State & Storage (AP/client tracking, whitelist/blacklist, SQLite persistence) |
 | 4 | ✅ Complete | REST API & Dashboard (chi, SSE, React 19 SPA, auth with admin/user roles) |
-| 5 | ✅ Complete | Cross-platform (macOS support via airport + BPF, runtime capability detection) |
+| 5 | ✅ Complete | Cross-platform (macOS support via CoreWLAN + BPF, Linux native, runtime capability detection) |
 
 Two components span the entire project:
 
@@ -72,6 +72,9 @@ See `specs/architecture/layers.md` for the full dependency DAG and import rules.
 ## Development Commands
 
 ```bash
+# Full rebuild (dependencies + web + binary)
+make all         # Restore all deps (Go + npm), build web, then build binary
+
 # Go
 make build       # Build for current platform (embeds web/dist)
 make build-all   # Cross-compile for linux/amd64, linux/arm64, darwin/arm64
@@ -84,7 +87,7 @@ make fmt         # Format all Go source
 make tidy        # Tidy Go modules
 
 # Web dashboard
-make web-deps    # Install Node.js dependencies (npm ci)
+make web-deps    # Install Node.js dependencies (npm ci) — prerequisite for make web
 make web         # Build SPA into internal/api/web/dist/
 make web-clean   # Remove embedded SPA bundle
 make lint-web    # Lint SPA sources with ESLint
@@ -93,7 +96,7 @@ make lint-web    # Lint SPA sources with ESLint
 make help        # List all targets
 ```
 
-> **Note:** A pre-built dashboard bundle is committed to `internal/api/web/dist/` so `make build` always produces a complete binary. Run `make web` only when the SPA source changes.
+> **Note:** A pre-built dashboard bundle is committed to `internal/api/web/dist/` so `make build` always produces a complete binary. Run `make web-deps && make web` only when the SPA source changes. `make web-deps` must be run before `make web` to install TypeScript and other Node dependencies.
 
 ## Running Components
 
@@ -125,6 +128,11 @@ cd web && npm run dev
 
 ### Password Hash Generation
 
+The `-hash-password` flag is a built-in bcrypt hash utility. Passwords are
+never stored in plaintext — the YAML config accepts only pre-hashed values in
+`auth.admin_password_hash` and `auth.user_password_hash`. This flag generates
+those hashes directly from the binary, no external tools needed.
+
 ```bash
 ./bin/tobimaru -hash-password "mypassword"
 ```
@@ -133,7 +141,9 @@ cd web && npm run dev
 
 The orchestrator (`cmd/tobimaru/main.go`) follows this sequence:
 
-1. Parse CLI flags (`-config`, `-version`, `-hash-password`)
+1. Parse CLI flags (`-config`, `-version`, `-hash-password`).
+   `-hash-password` is a standalone utility — it prints a bcrypt hash and
+   exits. The daemon does not start when this flag is set.
 2. Load and validate YAML configuration
 3. Initialize structured logger
 4. Open SQLite storage (if enabled)

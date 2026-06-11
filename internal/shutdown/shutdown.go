@@ -4,11 +4,13 @@ package shutdown
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"slices"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // Hook represents a cleanup function to be executed during shutdown.
@@ -75,6 +77,8 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 }
 
 // doShutdown contains the actual shutdown logic invoked exactly once.
+// Each hook gets its own per-hook deadline so a slow hook cannot skip
+// all remaining hooks in the chain.
 func (m *Manager) doShutdown(ctx context.Context) error {
 	m.mu.Lock()
 	if m.stopFunc != nil {
@@ -86,8 +90,10 @@ func (m *Manager) doShutdown(ctx context.Context) error {
 
 	var errs []error
 
-	// Execute hooks in reverse order (LIFO).
+	// Execute hooks in reverse order (LIFO). A per-hook sub-context with
+	// a generous budget ensures one slow hook doesn't starve the rest.
 	for _, hook := range slices.Backward(hooks) {
+		hookCtx, hookCancel := context.WithTimeout(ctx, 5*time.Second)
 		done := make(chan error, 1)
 		go func(h Hook) {
 			done <- h.Fn()
@@ -98,13 +104,10 @@ func (m *Manager) doShutdown(ctx context.Context) error {
 			if err != nil {
 				errs = append(errs, err)
 			}
-		case <-ctx.Done():
-			// Hook is still running in the background. On the final shutdown
-			// path this is acceptable: the process is about to exit and the
-			// orphaned goroutine will be reclaimed by the OS.
-			errs = append(errs, ctx.Err())
-			return errors.Join(errs...)
+		case <-hookCtx.Done():
+			errs = append(errs, fmt.Errorf("hook %q: %w", hook.Name, hookCtx.Err()))
 		}
+		hookCancel()
 	}
 
 	return errors.Join(errs...)

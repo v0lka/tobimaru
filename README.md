@@ -1,6 +1,12 @@
 # Tobimaru
 
+[![CI](https://github.com/v0lka/tobimaru/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/v0lkav/tobimaru/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/v0lka/tobimaru/branch/main/graph/badge.svg)](https://codecov.io/gh/v0lka/tobimaru)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 Tobimaru is a WiFi Intrusion Detection System (WIDS) for Linux and macOS. It operates as a daemon that monitors wireless traffic in monitor mode, detects attacks such as deauthentication floods, and provides monitoring through a REST API, SSE real-time updates, and an embedded React web dashboard — all in a single binary.
+
+![tobimaru screenshot](images/screenshot.png)
 
 ## Features
 
@@ -60,8 +66,10 @@ make build-all   # Cross-compile for linux/amd64, linux/arm64, darwin/arm64
 
 The dashboard is a React 19 + TypeScript SPA located in `web/`. A pre-built bundle is committed to `internal/api/web/dist/` so that `make build` produces a complete single binary. Rebuild the dashboard only when the frontend changes.
 
+> **Important:** `make web` requires Node.js dependencies to be installed first. Run `make web-deps` before `make web`, or use `make web-deps && make web` to do both in one step.
+
 ```bash
-make web-deps    # Install Node.js dependencies (npm ci)
+make web-deps    # Install Node.js dependencies (npm ci) — required before make web
 make web         # Build SPA into internal/api/web/dist/
 make web-clean   # Remove the embedded SPA bundle (forces rebuild)
 make lint-web    # Lint SPA sources with ESLint
@@ -85,98 +93,104 @@ Tobimaru uses a YAML configuration file. See [`configs/tobimaru.yaml`](configs/t
 
 ### Command-Line Flags
 
-| Flag | Description |
-|------|-------------|
-| `-config <path>` | Path to YAML configuration file (default: `configs/tobimaru.yaml`) |
-| `-version` | Print version information and exit |
-| `-hash-password <plaintext>` | Print bcrypt hash for the given password and exit |
+| Flag                         | Description                                                        |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `-config <path>`             | Path to YAML configuration file (default: `configs/tobimaru.yaml`) |
+| `-version`                   | Print version information and exit                                 |
+| `-hash-password <plaintext>` | Print bcrypt hash for the given password and exit                  |
+
+The `-hash-password` flag is a built-in utility to generate bcrypt hashes for
+the YAML configuration. Passwords are never stored in plaintext — the config
+accepts only pre-hashed values in `auth.admin_password_hash` and
+`auth.user_password_hash`. This flag lets the operator generate those hashes
+directly from the binary, without external tools like `htpasswd`.
 
 ### Configuration Sections
 
 #### `log` — Logging
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `level` | `debug`, `info`, `warn`, `error` | `info` | Log verbosity |
-| `format` | `text`, `json` | `text` | Output format |
+| Field    | Type                             | Default | Description   |
+| -------- | -------------------------------- | ------- | ------------- |
+| `level`  | `debug`, `info`, `warn`, `error` | `info`  | Log verbosity |
+| `format` | `text`, `json`                   | `text`  | Output format |
 
 #### `monitor` — WiFi Interface & Capture
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `interface` | string | — | **Required.** WiFi interface name (e.g., `wlan0`, `en0`) |
-| `capture.snaplen` | int | `65535` | Max bytes per frame |
-| `capture.buffer_size` | int | `2097152` | Kernel buffer size in bytes (2 MB) |
-| `capture.frame_buffer_size` | int | `1024` | Internal frame channel capacity |
-| `capture.promiscuous` | bool | `true` | Enable promiscuous mode |
-| `capture.timeout` | duration | `100ms` | pcap read timeout |
-| `channel_hopping.enabled` | bool | `true` | Enable channel scanning |
-| `channel_hopping.dwell` | duration | `300ms` | Base time per channel (use `2s` on macOS) |
-| `channel_hopping.weighted_dwell.enabled` | bool | `true` | Give primary channels more dwell time |
-| `channel_hopping.weighted_dwell.primary_channels` | []int | `[1, 6, 11]` | Priority channels |
-| `channel_hopping.weighted_dwell.multiplier` | float | `2.5` | Dwell multiplier for primary channels |
-| `channel_hopping.channels_2ghz` | []int | `[1..13]` | 2.4 GHz channels to scan |
-| `channel_hopping.include_5ghz` | bool | `false` | Enable 5 GHz band scanning |
+| Field                                             | Type     | Default      | Description                                              |
+| ------------------------------------------------- | -------- | ------------ | -------------------------------------------------------- |
+| `interface`                                       | string   | —            | **Required.** WiFi interface name (e.g., `wlan0`, `en0`) |
+| `capture.snaplen`                                 | int      | `65535`      | Max bytes per frame                                      |
+| `capture.buffer_size`                             | int      | `2097152`    | Kernel buffer size in bytes (2 MB)                       |
+| `capture.frame_buffer_size`                       | int      | `1024`       | Internal frame channel capacity                          |
+| `capture.promiscuous`                             | bool     | `true`       | Enable promiscuous mode                                  |
+| `capture.timeout`                                 | duration | `100ms`      | pcap read timeout                                        |
+| `channel_hopping.enabled`                         | bool     | `true`       | Enable channel scanning                                  |
+| `channel_hopping.dwell`                           | duration | `300ms`      | Base time per channel (use `2s` on macOS)                |
+| `channel_hopping.weighted_dwell.enabled`          | bool     | `true`       | Give primary channels more dwell time                    |
+| `channel_hopping.weighted_dwell.primary_channels` | []int    | `[1, 6, 11]` | Priority channels                                        |
+| `channel_hopping.weighted_dwell.multiplier`       | float    | `2.5`        | Dwell multiplier for primary channels                    |
+| `channel_hopping.channels_2ghz`                   | []int    | `[1..13]`    | 2.4 GHz channels to scan                                 |
+| `channel_hopping.include_5ghz`                    | bool     | `false`      | Enable 5 GHz band scanning                               |
 
 #### `detection` — Detection Engine
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Master switch (no rules implemented yet; set to `false`) |
-| `dedup_window` | duration | `30s` | Suppress duplicate alerts |
-| `alert_buffer_size` | int | `256` | Buffered alert channel capacity |
+| Field               | Type     | Default | Description                                              |
+| ------------------- | -------- | ------- | -------------------------------------------------------- |
+| `enabled`           | bool     | `false` | Master switch (five concrete rules: deauth/disassoc/beacon flood, evil twin, unauthorized device) |
+| `dedup_window`      | duration | `30s`   | Suppress duplicate alerts                                |
+| `alert_buffer_size` | int      | `256`   | Buffered alert channel capacity                          |
 
 #### `state` — Network State Tracking
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `true` | Track observed APs and clients in memory |
-| `ttl` | duration | `10m` | Remove entries not seen for this duration |
-| `sweep_interval` | duration | `1m` | Eviction sweep interval |
+| Field            | Type     | Default | Description                               |
+| ---------------- | -------- | ------- | ----------------------------------------- |
+| `enabled`        | bool     | `true`  | Track observed APs and clients in memory  |
+| `ttl`            | duration | `10m`   | Remove entries not seen for this duration |
+| `sweep_interval` | duration | `1m`    | Eviction sweep interval                   |
 
 #### `whitelist` — Trusted Devices
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `auto_learning.enabled` | bool | `false` | Auto-add observed devices to whitelist at startup |
-| `auto_learning.duration` | duration | `15m` | Learning phase duration |
+| Field                    | Type     | Default | Description                                       |
+| ------------------------ | -------- | ------- | ------------------------------------------------- |
+| `auto_learning.enabled`  | bool     | `false` | Auto-add observed devices to whitelist at startup |
+| `auto_learning.duration` | duration | `15m`   | Learning phase duration                           |
 
 #### `storage` — SQLite Persistence
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Enable persistence (required for API auth) |
-| `path` | string | `tobimaru.db` | Database file path (created with `0600` permissions) |
-| `snapshot_interval` | duration | `5m` | State snapshot interval |
-| `max_snapshots` | int | `288` | Max snapshots to retain (~24h at 5m intervals) |
-| `max_events` | int | `100000` | Max security events to retain |
+| Field               | Type     | Default       | Description                                          |
+| ------------------- | -------- | ------------- | ---------------------------------------------------- |
+| `enabled`           | bool     | `false`       | Enable persistence (required for API auth)           |
+| `path`              | string   | `tobimaru.db` | Database file path (created with `0600` permissions) |
+| `snapshot_interval` | duration | `5m`          | State snapshot interval                              |
+| `max_snapshots`     | int      | `288`         | Max snapshots to retain (~24h at 5m intervals)       |
+| `max_events`        | int      | `100000`      | Max security events to retain                        |
 
 #### `api` — REST API & Dashboard
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Enable HTTP server with embedded dashboard |
-| `listen` | string | `127.0.0.1:8080` | Bind address (loopback by default) |
-| `read_timeout` | duration | `15s` | HTTP read timeout |
-| `write_timeout` | duration | `30s` | HTTP write timeout (SSE overrides this) |
-| `idle_timeout` | duration | `60s` | HTTP idle timeout |
-| `shutdown_timeout` | duration | `5s` | Graceful shutdown deadline |
-| `cors.allowed_origins` | []string | `[]` | CORS origins (empty = same-origin only) |
-| `auth.enabled` | bool | `true` | Enable session-based authentication |
-| `auth.session_ttl` | duration | `24h` | Session lifetime |
-| `auth.admin_password_hash` | string | — | bcrypt hash (generate with `-hash-password`) |
-| `auth.user_password_hash` | string | — | Optional read-only account |
+| Field                      | Type     | Default          | Description                                  |
+| -------------------------- | -------- | ---------------- | -------------------------------------------- |
+| `enabled`                  | bool     | `false`          | Enable HTTP server with embedded dashboard   |
+| `listen`                   | string   | `127.0.0.1:8080` | Bind address (loopback by default)           |
+| `read_timeout`             | duration | `15s`            | HTTP read timeout                            |
+| `write_timeout`            | duration | `30s`            | HTTP write timeout (SSE overrides this)      |
+| `idle_timeout`             | duration | `60s`            | HTTP idle timeout                            |
+| `shutdown_timeout`         | duration | `5s`             | Graceful shutdown deadline                   |
+| `cors.allowed_origins`     | []string | `[]`             | CORS origins (empty = same-origin only)      |
+| `auth.enabled`             | bool     | `true`           | Enable session-based authentication          |
+| `auth.session_ttl`         | duration | `24h`            | Session lifetime                             |
+| `auth.admin_password_hash` | string   | —                | bcrypt hash (generate with `-hash-password`) |
+| `auth.user_password_hash`  | string   | —                | Optional read-only account                   |
 
 ### Running with the API and Dashboard
 
 To enable the REST API and embedded web dashboard:
 
 ```bash
-# 1. Generate password hashes
+# 1. Generate bcrypt password hashes (copy the output into the config file)
 ./bin/tobimaru -hash-password "admin123"
 ./bin/tobimaru -hash-password "user123"
 
-# 2. Configure api section in tobimaru.yaml:
+# 2. Paste the hashes into tobimaru.yaml under auth.admin_password_hash / auth.user_password_hash:
 #    api:
 #      enabled: true
 #      listen: "127.0.0.1:8080"
@@ -197,24 +211,24 @@ Open `http://127.0.0.1:8080` in a browser. The dashboard serves the SPA and the 
 
 ### API Endpoints
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/api/status` | No | Uptime, version, current channel, platform capabilities |
-| `POST` | `/api/login` | No | Authenticate and receive session cookie |
-| `POST` | `/api/logout` | No | Revoke session |
-| `GET` | `/api/aps` | Yes | List observed access points |
-| `GET` | `/api/clients` | Yes | List observed clients |
-| `GET` | `/api/events` | Yes | List security events with filtering & pagination |
-| `GET` | `/api/stats` | Yes | Aggregated statistics |
-| `GET` | `/api/whitelist` | Yes | List whitelist entries |
-| `GET` | `/api/blacklist` | Yes | List blacklist entries |
-| `GET` | `/api/config` | Yes | Read current configuration |
-| `GET` | `/api/stream` | Yes | SSE stream for real-time events & state updates |
-| `PUT` | `/api/config` | Admin | Update configuration at runtime |
-| `POST` | `/api/whitelist` | Admin | Add whitelist entry |
-| `DELETE` | `/api/whitelist/{mac}` | Admin | Remove whitelist entry |
-| `POST` | `/api/blacklist` | Admin | Add blacklist entry |
-| `DELETE` | `/api/blacklist/{mac}` | Admin | Remove blacklist entry |
+| Method   | Path                   | Auth  | Description                                             |
+| -------- | ---------------------- | ----- | ------------------------------------------------------- |
+| `GET`    | `/api/status`          | No    | Uptime, version, current channel, platform capabilities |
+| `POST`   | `/api/login`           | No    | Authenticate and receive session cookie                 |
+| `POST`   | `/api/logout`          | No    | Revoke session                                          |
+| `GET`    | `/api/aps`             | Yes   | List observed access points                             |
+| `GET`    | `/api/clients`         | Yes   | List observed clients                                   |
+| `GET`    | `/api/events`          | Yes   | List security events with filtering & pagination        |
+| `GET`    | `/api/stats`           | Yes   | Aggregated statistics                                   |
+| `GET`    | `/api/whitelist`       | Yes   | List whitelist entries                                  |
+| `GET`    | `/api/blacklist`       | Yes   | List blacklist entries                                  |
+| `GET`    | `/api/config`          | Yes   | Read current configuration                              |
+| `GET`    | `/api/stream`          | Yes   | SSE stream for real-time events & state updates         |
+| `PUT`    | `/api/config`          | Admin | Update configuration at runtime                         |
+| `POST`   | `/api/whitelist`       | Admin | Add whitelist entry                                     |
+| `DELETE` | `/api/whitelist/{mac}` | Admin | Remove whitelist entry                                  |
+| `POST`   | `/api/blacklist`       | Admin | Add blacklist entry                                     |
+| `DELETE` | `/api/blacklist/{mac}` | Admin | Remove blacklist entry                                  |
 
 ## Running on macOS
 
@@ -238,7 +252,7 @@ make run         # Build and run
 make clean       # Remove build artifacts
 make fmt         # Format all Go source
 make tidy        # Tidy Go modules
-make web-deps    # Install SPA dependencies
+make web-deps    # Install SPA dependencies (prerequisite for make web)
 make web         # Build SPA into internal/api/web/dist/
 make web-clean   # Remove embedded SPA bundle
 make lint-web    # Lint SPA sources
@@ -256,15 +270,15 @@ make help        # List all targets
 
 Phases 0–5 of the mandatory portion are complete:
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 0 | ✅ Complete | Foundation (config, logging, shutdown, version, CI) |
-| 1 | ✅ Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing) |
-| 2 | 🚧 In Progress | Detection Engine (rule interface & dedup done; specific rules upcoming) |
-| 3 | ✅ Complete | Network State & Storage (AP/client tracking, whitelist, SQLite) |
-| 4 | ✅ Complete | REST API & Dashboard (chi router, SSE, React 19 SPA, auth) |
-| 5 | ✅ Complete | Cross-platform (macOS support with graceful degradation) |
-| 6–12 | 📋 Planned | EAPOL analysis, active countermeasures, internal monitoring, analytics, OpenWrt |
+| Phase | Status         | Description                                                                     |
+| ----- | -------------- | ------------------------------------------------------------------------------- |
+| 0     | ✅ Complete    | Foundation (config, logging, shutdown, version, CI)                             |
+| 1     | ✅ Complete    | Capture Engine (monitor mode, pcap, channel hopping, parsing)                   |
+| 2     | ✅ Complete    | Detection Engine (five rules with unit + pcap integration tests)                 |
+| 3     | ✅ Complete    | Network State & Storage (AP/client tracking, whitelist, SQLite)                 |
+| 4     | ✅ Complete    | REST API & Dashboard (chi router, SSE, React 19 SPA, auth)                      |
+| 5     | ✅ Complete    | Cross-platform (macOS support via CoreWLAN + BPF, Linux native, runtime capability detection) |
+| 6–12  | 📋 Planned     | EAPOL analysis, active countermeasures, internal monitoring, analytics, OpenWrt |
 
 See [`docs/development/wifi-watchdog-roadmap.md`](docs/development/wifi-watchdog-roadmap.md) for the full roadmap.
 

@@ -438,6 +438,161 @@ func TestSessionsCRUD(t *testing.T) {
 	}
 }
 
+func TestSaveEvent_Nil(t *testing.T) {
+	repo := openTestDB(t)
+	if err := repo.SaveEvent(t.Context(), nil); err != nil {
+		t.Errorf("SaveEvent(nil) should return nil, got %v", err)
+	}
+}
+
+func TestSaveSnapshot_Nil(t *testing.T) {
+	repo := openTestDB(t)
+	if err := repo.SaveSnapshot(t.Context(), nil); err != nil {
+		t.Errorf("SaveSnapshot(nil) should return nil, got %v", err)
+	}
+}
+
+func TestLatestSnapshot_NotFound(t *testing.T) {
+	repo := openTestDB(t)
+	_, err := repo.LatestSnapshot(t.Context())
+	if err == nil {
+		t.Fatal("expected ErrNotFound for empty snapshots table")
+	}
+}
+
+func TestSaveWhitelistEntry_Nil(t *testing.T) {
+	repo := openTestDB(t)
+	if err := repo.SaveWhitelistEntry(t.Context(), nil); err != nil {
+		t.Errorf("SaveWhitelistEntry(nil) should return nil, got %v", err)
+	}
+	// Nil MAC.
+	entry := &state.WhitelistEntry{MAC: nil, Source: "manual", CreatedAt: time.Now()}
+	if err := repo.SaveWhitelistEntry(t.Context(), entry); err != nil {
+		t.Errorf("SaveWhitelistEntry(nil MAC) should return nil, got %v", err)
+	}
+}
+
+func TestSaveBlacklistEntry_Nil(t *testing.T) {
+	repo := openTestDB(t)
+	if err := repo.SaveBlacklistEntry(t.Context(), nil); err != nil {
+		t.Errorf("SaveBlacklistEntry(nil) should return nil, got %v", err)
+	}
+	entry := &state.BlacklistEntry{MAC: nil, Reason: "test", CreatedAt: time.Now()}
+	if err := repo.SaveBlacklistEntry(t.Context(), entry); err != nil {
+		t.Errorf("SaveBlacklistEntry(nil MAC) should return nil, got %v", err)
+	}
+}
+
+func TestCreateSession_Invalid(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	if err := repo.CreateSession(ctx, nil); err == nil {
+		t.Error("CreateSession(nil) should return error")
+	}
+	if err := repo.CreateSession(ctx, &Session{Token: ""}); err == nil {
+		t.Error("CreateSession(empty token) should return error")
+	}
+}
+
+func TestListEvents_Until(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	now := time.Now()
+	for i := range 3 {
+		ev := &detector.SecurityEvent{
+			Timestamp: now.Add(-time.Duration(3-i) * time.Hour),
+			EventType: "test",
+			Severity:  detector.SeverityInfo,
+			Metadata:  make(map[string]any),
+		}
+		if err := repo.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Until filters to events with timestamp <= cutoff.
+	// Events at -3h, -2h, -1h; cutoff at -2h → only -3h and -2h match.
+	events, err := repo.ListEvents(ctx, EventFilter{Until: now.Add(-2 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 events with Until=-2h, got %d", len(events))
+	}
+}
+
+func TestListBlacklist_InvalidMAC(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	_, err := repo.db.ExecContext(ctx,
+		`INSERT INTO blacklist (mac, reason, comment, created_at) VALUES (?, ?, ?, ?)`,
+		"not-a-mac", "", "", time.Now().Format(time.RFC3339Nano))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.ListBlacklist(ctx); err == nil {
+		t.Error("expected error for invalid MAC in blacklist")
+	}
+}
+
+func TestGetSession_InvalidTimestamps(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	// Insert a session with invalid created_at.
+	_, err := repo.db.ExecContext(ctx,
+		`INSERT INTO sessions (token, role, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+		"bad-created", "admin", "not-a-timestamp", time.Now().Add(time.Hour).Format(time.RFC3339Nano))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.GetSession(ctx, "bad-created"); err == nil {
+		t.Error("expected error for invalid created_at in session")
+	}
+}
+
+func TestMigration_V2(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	// Fake an older schema version so migrate applies v2.
+	_, err := repo.db.ExecContext(ctx, "UPDATE schema_version SET version = 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(ctx, repo.db); err != nil {
+		t.Fatalf("v2 migration failed: %v", err)
+	}
+	// Query the sessions table to verify it exists.
+	var count int
+	if err := repo.db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='sessions'").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Error("sessions table should exist after v2 migration")
+	}
+}
+
+func TestPruneEvents_Zero(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	for i := range 3 {
+		ev := &detector.SecurityEvent{
+			Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+			EventType: "test",
+			Severity:  detector.SeverityInfo,
+			Metadata:  make(map[string]any),
+		}
+		if err := repo.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pruned, err := repo.PruneEvents(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 3 {
+		t.Errorf("expected 3 pruned with maxCount=0, got %d", pruned)
+	}
+}
+
 func TestPruneExpiredSessions(t *testing.T) {
 	repo := openTestDB(t)
 	ctx := context.Background()
@@ -464,5 +619,140 @@ func TestPruneExpiredSessions(t *testing.T) {
 	}
 	if _, err := repo.GetSession(ctx, "expired"); err == nil {
 		t.Error("expired session should have been removed")
+	}
+}
+
+func TestListEvents_Offset(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	for i := range 5 {
+		ev := &detector.SecurityEvent{
+			Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+			EventType: "test",
+			Severity:  detector.SeverityInfo,
+			Metadata:  make(map[string]any),
+		}
+		if err := repo.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Offset should skip first 2 events.
+	events, err := repo.ListEvents(ctx, EventFilter{Limit: 10, Offset: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 {
+		t.Errorf("expected 3 events with offset=2, got %d", len(events))
+	}
+}
+
+func TestListEvents_EventType(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	for i := range 2 {
+		ev := &detector.SecurityEvent{
+			Timestamp: time.Now().Add(time.Duration(i) * time.Minute),
+			EventType: "deauth_flood",
+			Severity:  detector.SeverityCritical,
+			Metadata:  make(map[string]any),
+		}
+		if err := repo.SaveEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Add one event of a different type.
+	ev := &detector.SecurityEvent{
+		Timestamp: time.Now(),
+		EventType: "evil_twin",
+		Severity:  detector.SeverityWarning,
+		Metadata:  make(map[string]any),
+	}
+	if err := repo.SaveEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	events, err := repo.ListEvents(ctx, EventFilter{EventType: "deauth_flood"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Errorf("expected 2 deauth_flood events, got %d", len(events))
+	}
+}
+
+func TestListEvents_Since(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	now := time.Now()
+	ev := &detector.SecurityEvent{
+		Timestamp: now.Add(-time.Hour),
+		EventType: "test",
+		Severity:  detector.SeverityInfo,
+		Metadata:  make(map[string]any),
+	}
+	if err := repo.SaveEvent(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	events, err := repo.ListEvents(ctx, EventFilter{Since: now.Add(-30 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Event is more than 30 minutes old, should be filtered out.
+	if len(events) != 0 {
+		t.Errorf("expected 0 events with Since filter, got %d", len(events))
+	}
+}
+
+func TestListEvents_NoResults(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	events, err := repo.ListEvents(ctx, EventFilter{EventType: "nonexistent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Errorf("expected 0 events, got %d", len(events))
+	}
+}
+
+func TestSaveEvent_NilMetadata(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	ev := &detector.SecurityEvent{
+		Timestamp: time.Now(),
+		EventType: "test",
+		Severity:  detector.SeverityInfo,
+		Metadata:  nil,
+	}
+	if err := repo.SaveEvent(ctx, ev); err != nil {
+		t.Errorf("SaveEvent(nil metadata) should succeed, got %v", err)
+	}
+}
+
+func TestIsMemoryDSN(t *testing.T) {
+	if !isMemoryDSN(":memory:") {
+		t.Error(":memory: should be detected")
+	}
+	if !isMemoryDSN("file::memory:?cache=shared") {
+		t.Error("file::memory: DSN should be detected")
+	}
+	if !isMemoryDSN("file:test?mode=memory") {
+		t.Error("mode=memory DSN should be detected")
+	}
+	if isMemoryDSN("real/path.db") {
+		t.Error("real path should not be detected as memory")
+	}
+}
+
+func TestGetSession_InvalidExpiresAt(t *testing.T) {
+	repo := openTestDB(t)
+	ctx := t.Context()
+	_, err := repo.db.ExecContext(ctx,
+		`INSERT INTO sessions (token, role, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+		"bad-expires", "admin", time.Now().Format(time.RFC3339Nano), "not-a-timestamp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.GetSession(ctx, "bad-expires"); err == nil {
+		t.Error("expected error for invalid expires_at in session")
 	}
 }

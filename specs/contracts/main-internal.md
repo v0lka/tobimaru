@@ -18,7 +18,7 @@
 | `version.Version`, `version.Commit`, `version.Date` (vars) | `internal/version` | `cmd/tobimaru` | Individual version fields for structured logging |
 | `capture.NewPipeline(cfg, logger) (*Pipeline, error)` | `internal/capture` | `cmd/tobimaru` | Create capture pipeline from config |
 | `capture.Pipeline.Start(ctx) error` | `internal/capture` | `cmd/tobimaru` | Start frame capture, parsing, and channel hopping |
-| `capture.Pipeline.Stop()` | `internal/capture` | `cmd/tobimaru` | Disable monitor mode and restore interface |
+| `capture.Pipeline.Stop(ctx) error` | `internal/capture` | `cmd/tobimaru` | Disable monitor mode and restore interface |
 | `capture.Pipeline.Frames() <-chan *parser.ParsedFrame` | `internal/capture` | `cmd/tobimaru` | Read-only channel of parsed frames for consumers |
 | `capture.Pipeline.Capabilities() platform.Capabilities` | `internal/capture` | `cmd/tobimaru` (future API) | Platform capabilities detected at pipeline creation |
 | `detector.NewEngine(cfg DetectionConfig) *Engine` | `internal/detector` | `cmd/tobimaru` | Create detection engine from config |
@@ -45,10 +45,14 @@
 | `api.NewServer(cfg, deps) (*Server, error)` | `internal/api` | `cmd/tobimaru` | Build chi-routed HTTP server |
 | `api.Server.Run(ctx) error` | `internal/api` | `cmd/tobimaru` | ListenAndServe + session pruner until ctx cancel |
 | `api.Server.Shutdown(ctx) error` | `internal/api` | `cmd/tobimaru` | Graceful HTTP shutdown |
-| `api.NewHub(logger) *Hub` | `internal/api` | `cmd/tobimaru` | Create SSE fan-out broadcaster |
+| `api.NewHub(logger, opts...) *Hub` | `internal/api` | `cmd/tobimaru` | Create SSE fan-out broadcaster with optional HubOption variants |
 | `api.Hub.Run(ctx)` | `internal/api` | `cmd/tobimaru` | Drain publish queue and broadcast |
 | `api.Hub.Publish(Message)` | `internal/api` | `cmd/tobimaru` | Push event/status updates to subscribed dashboards |
-| `api.NewEventMessage(event) Message` | `internal/api` | `cmd/tobimaru` | Wrap a security event for SSE broadcast |
+| `api.Hub.HasSubscribers() bool` | `internal/api` | `cmd/tobimaru` | Check for active subscribers before producing expensive payloads |
+| `api.NewSecurityEventMessage(event) Message` | `internal/api` | `cmd/tobimaru` | Wrap a security event using the REST DTO for SSE broadcast |
+| `api.NewStatusMessage(payload) Message` | `internal/api` | `cmd/tobimaru` | Wrap a status snapshot for SSE broadcast |
+| `api.NewAPMessage(aps) Message` | `internal/api` | `cmd/tobimaru` | Wrap AP state snapshot using DTO-safe MAC encoding |
+| `api.NewClientMessage(clients) Message` | `internal/api` | `cmd/tobimaru` | Wrap client state snapshot using DTO-safe MAC encoding |
 
 ## Initialization
 
@@ -60,6 +64,11 @@ flag.Parse()
 
 // 2. Handle --version (exit early, no deps needed)
 if *flagVersion { fmt.Println(version.String()); return }
+
+// 2b. Handle --hash-password (standalone utility: generate bcrypt hash and exit).
+// The daemon never starts when this flag is set. This is the mechanism for
+// producing admin_password_hash / user_password_hash values for the YAML config.
+if *flagHashPassword != "" { hash, _ := bcrypt.Generate...; fmt.Println(hash); return }
 
 // 3. Load config (pulls from all config sections)
 cfg, err := config.Load(*flagConfig)
@@ -90,19 +99,22 @@ if cfg.State.Enabled {
     }
 }
 
-// 8. Create capture pipeline from full config and logger
+// 8. Create detection engine (early, to fail fast if no rules registered)
+engine := detector.NewEngine(cfg.Detection)
+
+// 9. Create capture pipeline from full config and logger
 pipeline, err := capture.NewPipeline(cfg, logger)
 // On failure: slog.Error + os.Exit(1)
 
-// 9. Create shutdown manager and get signal context
+// 10. Create shutdown manager and get signal context
 sm := shutdown.NewManager()
 signalCtx := sm.WaitForSignal(context.Background())
 
-// 10. Start capture pipeline (enables monitor mode, opens pcap, starts goroutines)
+// 11. Start capture pipeline (enables monitor mode, opens pcap, starts goroutines)
 pipeline.Start(signalCtx)
 // On failure: slog.Error + os.Exit(1)
 
-// 11. Register cleanup hooks (capture stop, storage close)
+// 12. Register cleanup hooks (capture stop, storage close)
 //
 // capture_stop uses context.Background() rather than the shutdown context
 // because the pipeline must complete its cleanup (disable monitor mode,
@@ -110,34 +122,40 @@ pipeline.Start(signalCtx)
 // 5s timeout inside Pipeline.Stop bounds the operation, and the shutdown
 // manager's overall deadline still bounds total shutdown duration.
 sm.Register("capture_stop", func() error { return pipeline.Stop(context.Background()) })
+
+// 13. Register detection rules (only enabled ones)
+registerDetectionRules(engine, cfg.Detection)
+
 if repo != nil {
     sm.Register("storage_close", func() error { return repo.Close() })
 }
 
-// 12. Create detection engine
-engine := detector.NewEngine(cfg.Detection)
+// 14. Create the SSE hub when API is enabled (before alert consumer starts)
+var apiHub *api.Hub
+if cfg.API.Enabled {
+    apiHub = api.NewHub(logger)
+}
 
-// 13. Wire frame consumers (fan-out when both detection + state are active)
+// 15. Wire frame consumers (fan-out when both detection + state are active)
 // Detection+State: fanOut(pipeline.Frames(), detectorCh, stateCh)
 // Detection only: engine.Run(signalCtx, pipeline.Frames())
 // State only: consumeStateFrames(signalCtx, pipeline.Frames(), stateEngine)
 // Neither: consumeFrames(signalCtx, pipeline.Frames())
 
-// 14. Start eviction, snapshot writer, auto-learning goroutines
-if stateEngine != nil { go stateEngine.RunEviction(signalCtx) }
-if stateEngine != nil && repo != nil { go runSnapshotWriter(...) }
-if stateEngine != nil && cfg.Whitelist.AutoLearning.Enabled { go autoLearn(...) }
+// 16. Start eviction, snapshot writer, auto-learning goroutines
+if stateEngine != nil { consumerWG.Go(func() { stateEngine.RunEviction(signalCtx) }) }
+if stateEngine != nil && repo != nil { consumerWG.Go(func() { runSnapshotWriter(...) }) }
+if stateEngine != nil && cfg.Whitelist.AutoLearning.Enabled { consumerWG.Go(func() { autoLearn(...) }) }
 
-// 14b. Start API server (REST + SSE + dashboard) when cfg.API.Enabled
+// 16b. Start API server (REST + SSE + dashboard) when cfg.API.Enabled
 if cfg.API.Enabled {
-    apiHub := api.NewHub(logger)                     // already created earlier so consumeAlerts can publish
     apiSrv, _ := api.NewServer(cfg.API, api.Deps{...})
-    go apiHub.Run(signalCtx)
-    go apiSrv.Run(signalCtx)
+    consumerWG.Go(func() { apiHub.Run(signalCtx) })
+    consumerWG.Go(func() { apiSrv.Run(signalCtx) })
     sm.Register("api_stop", func() error { ... apiSrv.Shutdown(...) ... })
 }
 
-// 15. Consumer stop hook, block until signal, shutdown
+// 17. Consumer stop hook, block until signal, shutdown
 sm.Register("consumer_stop", func() error { consumerWG.Wait(); return nil })
 <-signalCtx.Done()
 shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

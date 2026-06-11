@@ -4,27 +4,31 @@
 package platform
 
 // Capabilities describes what WiFi monitoring features the current platform supports.
+//
+// JSON field names use snake_case to match the rest of the REST API contract
+// (see internal/api/handlers_status.go). The dashboard SPA reads these keys
+// directly, so the tags MUST stay in sync with web/src/pages/Status.tsx.
 type Capabilities struct {
 	// MonitorMode indicates whether the platform supports monitor mode capture.
-	MonitorMode bool
+	MonitorMode bool `json:"monitor_mode"`
 
 	// FrameInjection indicates whether the platform can inject 802.11 frames.
-	FrameInjection bool
+	FrameInjection bool `json:"frame_injection"`
 
 	// ChannelHopping indicates whether the platform can switch channels at runtime.
-	ChannelHopping bool
+	ChannelHopping bool `json:"channel_hopping"`
 
 	// MaxChannels is the maximum number of channels that can be monitored in one cycle.
 	// 0 means unlimited, 1 means single-channel only.
-	MaxChannels int
+	MaxChannels int `json:"max_channels"`
 
 	// SlowHopping indicates that channel switching is significantly slower than dwell time.
 	// When true, pipelines should increase dwell time to compensate for switching overhead.
-	SlowHopping bool
+	SlowHopping bool `json:"slow_hopping"`
 
 	// SingleAdapter indicates that the system has only one WiFi adapter and cannot
 	// simultaneously operate in monitor and managed mode.
-	SingleAdapter bool
+	SingleAdapter bool `json:"single_adapter"`
 }
 
 // ReportLimitations returns a human-readable list of platform limitations.

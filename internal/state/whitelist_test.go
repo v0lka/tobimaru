@@ -74,6 +74,27 @@ func TestWhitelistEngine_List(t *testing.T) {
 	}
 }
 
+func TestWhitelistEngine_ListBlacklist(t *testing.T) {
+	w := NewWhitelistEngine()
+	mac1, _ := net.ParseMAC("AA:BB:CC:DD:EE:01")
+	mac2, _ := net.ParseMAC("AA:BB:CC:DD:EE:02")
+
+	w.AddBlacklist(&BlacklistEntry{MAC: mac1, Reason: "suspicious", CreatedAt: time.Now()})
+	w.AddBlacklist(&BlacklistEntry{MAC: mac2, Reason: "manual", CreatedAt: time.Now()})
+
+	list := w.ListBlacklist()
+	if len(list) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(list))
+	}
+
+	// Empty list should return empty slice, not nil.
+	w2 := NewWhitelistEngine()
+	emptyList := w2.ListBlacklist()
+	if len(emptyList) != 0 {
+		t.Errorf("expected empty list, got %d", len(emptyList))
+	}
+}
+
 func TestWhitelistEngine_BulkAdd(t *testing.T) {
 	w := NewWhitelistEngine()
 	mac1, _ := net.ParseMAC("11:22:33:44:55:01")

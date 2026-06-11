@@ -54,7 +54,12 @@ func (m *ClientMap) Update(client *ClientInfo) {
 	existing.LastSeen = client.LastSeen
 	existing.RSSI = client.RSSI
 	existing.Channel = client.Channel
-	existing.FrameCount = client.FrameCount
+	// Only overwrite FrameCount when the caller supplied a non-zero value.
+	// Updates from frames that don't carry a counter (e.g. probe requests)
+	// pass FrameCount=0 and must not reset accumulated traffic counters.
+	if client.FrameCount != 0 {
+		existing.FrameCount = client.FrameCount
+	}
 
 	if client.BSSID != nil {
 		existing.BSSID = client.BSSID
@@ -105,14 +110,33 @@ func (m *ClientMap) Len() int {
 // Evict removes entries with LastSeen before the given cutoff time.
 // Returns the number of entries evicted.
 func (m *ClientMap) Evict(olderThan time.Time) int {
+	return m.evictWhere(olderThan, nil)
+}
+
+// EvictProbeOnly removes probe-only clients (FrameCount == 0, not associated)
+// whose LastSeen is before the given cutoff. Probe-only clients are typically
+// transient MAC-randomized addresses from probe requests and should be evicted
+// faster than clients that have sent data or associated.
+func (m *ClientMap) EvictProbeOnly(olderThan time.Time) int {
+	return m.evictWhere(olderThan, func(c *ClientInfo) bool {
+		return c.FrameCount == 0 && !c.Associated
+	})
+}
+
+// evictWhere removes entries whose LastSeen is before olderThan and that
+// satisfy the optional predicate. When predicate is nil all stale entries
+// match.
+func (m *ClientMap) evictWhere(olderThan time.Time, predicate func(*ClientInfo) bool) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	evicted := 0
 	for key, c := range m.clients {
 		if c.LastSeen.Before(olderThan) {
-			delete(m.clients, key)
-			evicted++
+			if predicate == nil || predicate(c) {
+				delete(m.clients, key)
+				evicted++
+			}
 		}
 	}
 	return evicted

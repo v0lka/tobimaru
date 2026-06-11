@@ -24,6 +24,7 @@ authentication and broadcasts real-time updates through Server-Sent Events.
 - `internal/api/web/embed.go` — `go:embed all:dist` SPA handler with placeholder fallback.
 - `internal/api/web/dist/` — built SPA bundle (committed).
 - `web/` — SPA source tree (React 19 + Vite + TypeScript). Built by `make web`.
+- `web/src/assets/` — static assets imported by components (Vite adds content hashes at build time).
 
 ## Core Types
 
@@ -90,6 +91,11 @@ stream plus a 15 s comment keepalive.
 - The mutable allowlist for `PUT /api/config` is exactly:
   `log_level`, `detection_enabled`, `detection_dedup_window`. Any other key
   returns 400 with `errTypeUnsupportedField`.
+- SPA caching policy: `/assets/*` files carry content hashes in filenames and
+  are served with `Cache-Control: public, max-age=31536000, immutable`.
+  Root-level files (`logo-128.png`, `favicon.ico`, etc.) are served with
+  `Cache-Control: no-cache` (always revalidate). `index.html` is also
+  `no-cache` to ensure browsers always fetch the latest entry point.
 
 ## Configuration
 
@@ -104,10 +110,11 @@ stream plus a 15 s comment keepalive.
 | `idle_timeout` | `60s` | keep-alive idle window |
 | `shutdown_timeout` | `5s` | graceful HTTP shutdown deadline |
 | `cors.allowed_origins` | `[]` | empty = same-origin only |
-| `auth.enabled` | `true` | when `false` every request is admin |
+| `auth.enabled` | `false` | when `false` every request is admin |
 | `auth.session_ttl` | `24h` | absolute session expiry |
 | `auth.admin_password_hash` | — | required when auth enabled (bcrypt) |
 | `auth.user_password_hash` | — | optional read-only account |
+| `auth.cookie_secure` | `true` | Secure attribute on session cookie |
 
 ## Extension Points
 

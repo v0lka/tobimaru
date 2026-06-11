@@ -90,8 +90,16 @@ func (e *Engine) ProcessFrame(frame *parser.ParsedFrame) {
 	}
 }
 
+// probeOnlyTTL is a shorter TTL for clients that have only been observed
+// via probe requests (no data frames and never associated). These are
+// typically MAC-randomized addresses from passing devices. Keeping them
+// for the full state TTL would inflate the client count.
+const probeOnlyTTL = 2 * time.Minute
+
 // RunEviction starts the TTL eviction goroutine. It periodically sweeps
 // both AP and client maps, removing entries not observed within the TTL.
+// Probe-only clients (no data frames, not associated) are evicted after a
+// shorter probeOnlyTTL so that transient random MACs don't accumulate.
 // Exits when ctx is canceled.
 func (e *Engine) RunEviction(ctx context.Context) {
 	ticker := time.NewTicker(e.cfg.SweepInterval)
@@ -103,11 +111,20 @@ func (e *Engine) RunEviction(ctx context.Context) {
 			return
 		case <-ticker.C:
 			cutoff := time.Now().Add(-e.cfg.TTL)
+			probeOnlyCutoff := time.Now().Add(-probeOnlyTTL)
+
 			apEvicted := e.aps.Evict(cutoff)
+
+			// Short TTL for probe-only clients (random MACs).
+			probeOnlyEvicted := e.clients.EvictProbeOnly(probeOnlyCutoff)
+			// Full TTL for all remaining clients (associated or data-framing).
 			clientEvicted := e.clients.Evict(cutoff)
-			if apEvicted > 0 || clientEvicted > 0 {
+
+			totalClientEvicted := probeOnlyEvicted + clientEvicted
+			if apEvicted > 0 || totalClientEvicted > 0 {
 				e.logger.Debug("state eviction sweep",
 					"aps_evicted", apEvicted,
+					"clients_probe_only_evicted", probeOnlyEvicted,
 					"clients_evicted", clientEvicted,
 					"aps_remaining", e.aps.Len(),
 					"clients_remaining", e.clients.Len(),
@@ -119,7 +136,7 @@ func (e *Engine) RunEviction(ctx context.Context) {
 
 // processBeacon updates the AP map from a beacon frame.
 func (e *Engine) processBeacon(frame *parser.ParsedFrame) {
-	if frame.BSSID == nil {
+	if frame.BSSID == nil || !isValidBSSID(frame.BSSID) {
 		return
 	}
 	now := frame.Timestamp
@@ -142,7 +159,7 @@ func (e *Engine) processBeacon(frame *parser.ParsedFrame) {
 
 // processProbeResponse updates the AP map from a probe response.
 func (e *Engine) processProbeResponse(frame *parser.ParsedFrame) {
-	if frame.BSSID == nil {
+	if frame.BSSID == nil || !isValidBSSID(frame.BSSID) {
 		return
 	}
 	now := frame.Timestamp
@@ -174,12 +191,14 @@ func (e *Engine) processProbeRequest(frame *parser.ParsedFrame) {
 
 	_, exists := e.clients.Get(frame.SrcMAC)
 	if exists {
+		// FrameCount intentionally omitted (zero): ClientMap.Update preserves
+		// the existing counter when the supplied value is zero, so probe
+		// requests don't reset accumulated data-frame counts.
 		e.clients.Update(&ClientInfo{
-			MAC:        frame.SrcMAC,
-			Channel:    frame.Channel,
-			RSSI:       frame.RSSI,
-			LastSeen:   now,
-			FrameCount: 0, // will be merged, not overwritten if zero
+			MAC:      frame.SrcMAC,
+			Channel:  frame.Channel,
+			RSSI:     frame.RSSI,
+			LastSeen: now,
 		})
 	} else {
 		e.clients.Update(&ClientInfo{
@@ -308,6 +327,26 @@ func isBroadcast(mac net.HardwareAddr) bool {
 		}
 	}
 	return true
+}
+
+// isValidBSSID reports whether mac is a plausible BSSID (unicast, non-zero,
+// non-broadcast). Used as a defense-in-depth check against garbage frames
+// on macOS where the BPF radiotap filter may pass non‑802.11 noise.
+func isValidBSSID(mac net.HardwareAddr) bool {
+	if len(mac) != 6 {
+		return false
+	}
+	// Reject broadcast (ff:ff:ff:ff:ff:ff) and multicast (bit 0 of first byte = 1).
+	if isBroadcast(mac) || mac[0]&0x01 != 0 {
+		return false
+	}
+	// Reject all-zero MAC (00:00:00:00:00:00).
+	for _, b := range mac {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // copyIEs creates a deep copy of the information elements map.

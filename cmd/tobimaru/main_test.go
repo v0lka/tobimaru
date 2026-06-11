@@ -403,8 +403,11 @@ api:
 	}
 }
 
-// TestIntegration_DetectionEnabledNoRules verifies the binary fails at startup
-// when detection.enabled=true but no rules are registered.
+// TestIntegration_DetectionEnabledNoRules verifies the binary starts cleanly
+// (no panic) when detection.enabled=true but no individual detection rule
+// sub-flags are enabled. The binary proceeds past the rules check (which
+// emits a WARN) and fails on the missing capture interface, not on the
+// rules check itself.
 func TestIntegration_DetectionEnabledNoRules(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -412,7 +415,8 @@ func TestIntegration_DetectionEnabledNoRules(t *testing.T) {
 
 	bin := buildBinary(t)
 
-	// Config with detection enabled and a dummy interface.
+	// Config with detection enabled and a dummy interface but no individual
+	// rule sub-flags (deauth_flood.enabled, etc.) — all default to false.
 	cfgPath := filepath.Join(t.TempDir(), "norules.yaml")
 	cfgContent := `log:
   level: info
@@ -435,11 +439,14 @@ api:
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, "-config", cfgPath).CombinedOutput()
+	// The binary exits non-zero because the pipeline fails on a non-existent
+	// interface after the detection engine successfully starts.
 	if err == nil {
-		t.Fatal("expected non-zero exit for detection.enabled without rules, got success")
+		t.Fatal("expected non-zero exit (pipeline fails on missing interface), got success")
 	}
-	if !strings.Contains(string(out), "no rules") {
-		t.Errorf("error output should mention 'no rules': %q", string(out))
+	outStr := string(out)
+	if strings.Contains(outStr, "panic:") {
+		t.Fatalf("binary panicked:\n%s", outStr)
 	}
 }
 
@@ -447,6 +454,224 @@ api:
 // capture pipeline failure on a non-existent interface), reporting a clear
 // error without panics. On systems with the named WiFi interface and monitor
 // mode, it would start successfully and respond to signals.
+func TestRegisterDetectionRules_AllEnabled(t *testing.T) {
+	detCfg := config.DetectionConfig{
+		Enabled:            true,
+		DedupWindow:        30 * time.Second,
+		DeauthFlood:        config.DeauthFloodConfig{Enabled: true, Threshold: 10, Window: time.Second},
+		DisassocFlood:      config.DisassocFloodConfig{Enabled: true, Threshold: 10, Window: time.Second},
+		BeaconFlood:        config.BeaconFloodConfig{Enabled: true, Threshold: 50, Window: 5 * time.Second},
+		EvilTwin:           config.EvilTwinConfig{Enabled: true, ScoreThreshold: 1, StaleTimeout: time.Minute, MinBeacons: 4},
+		UnauthorizedDevice: config.UnauthorizedDeviceConfig{Enabled: true, ProtectedBSSIDs: []string{"aa:bb:cc:dd:ee:ff"}, Cooldown: time.Minute},
+	}
+	engine := detector.NewEngine(detCfg)
+	registerDetectionRules(engine, detCfg)
+	if engine.RuleCount() != 5 {
+		t.Errorf("expected 5 rules, got %d", engine.RuleCount())
+	}
+}
+
+func TestRegisterDetectionRules_NoneEnabled(t *testing.T) {
+	engine := detector.NewEngine(config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+	})
+	registerDetectionRules(engine, config.DetectionConfig{
+		Enabled: true,
+	})
+	if engine.RuleCount() != 0 {
+		t.Errorf("expected 0 rules, got %d", engine.RuleCount())
+	}
+}
+
+func TestRegisterDetectionRules_DeauthOnly(t *testing.T) {
+	detCfg := config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+		DeauthFlood: config.DeauthFloodConfig{Enabled: true, Threshold: 10, Window: time.Second},
+	}
+	engine := detector.NewEngine(detCfg)
+	registerDetectionRules(engine, detCfg)
+	if engine.RuleCount() != 1 {
+		t.Errorf("expected 1 rule, got %d", engine.RuleCount())
+	}
+}
+
+func TestRegisterDetectionRules_DuplicateIgnored(t *testing.T) {
+	detCfg := config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+		DeauthFlood: config.DeauthFloodConfig{Enabled: true, Threshold: 10, Window: time.Second},
+	}
+	engine := detector.NewEngine(detCfg)
+	// Register same rule twice — second call should be a no-op.
+	registerDetectionRules(engine, detCfg)
+	registerDetectionRules(engine, detCfg)
+	if engine.RuleCount() != 1 {
+		t.Errorf("expected 1 rule after duplicate registration, got %d", engine.RuleCount())
+	}
+}
+
+func TestConsumeStateFrames_ContextCancel(t *testing.T) {
+	eng := state.NewEngine(
+		config.StateConfig{Enabled: true, TTL: time.Minute, SweepInterval: time.Minute},
+		config.WhitelistConfig{},
+		slog.Default(),
+	)
+	frames := make(chan *parser.ParsedFrame, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		consumeStateFrames(ctx, frames, eng)
+		close(done)
+	}()
+
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("consumeStateFrames did not stop after context cancellation")
+	}
+}
+
+func TestConsumeStateFrames_ChannelClose(t *testing.T) {
+	eng := state.NewEngine(
+		config.StateConfig{Enabled: true, TTL: time.Minute, SweepInterval: time.Minute},
+		config.WhitelistConfig{},
+		slog.Default(),
+	)
+	frames := make(chan *parser.ParsedFrame, 10)
+	ctx := context.Background()
+
+	done := make(chan struct{})
+	go func() {
+		consumeStateFrames(ctx, frames, eng)
+		close(done)
+	}()
+
+	frames <- &parser.ParsedFrame{FrameType: parser.FrameTypeBeacon, Channel: 1}
+	close(frames)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("consumeStateFrames did not stop after channel close")
+	}
+}
+
+func TestFanOut_ContextCancelDuringSinkSend(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	source := make(chan *parser.ParsedFrame, 1)
+	sink := make(chan *parser.ParsedFrame) // unbuffered to block
+
+	done := make(chan struct{})
+	go func() {
+		fanOut(ctx, source, sink)
+		close(done)
+	}()
+
+	// Send one frame that will block on the unbuffered sink.
+	source <- &parser.ParsedFrame{FrameType: parser.FrameTypeBeacon, Channel: 1}
+	// Let fanOut pick it up and block on the sink send.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("fanOut did not stop after context cancellation with blocked sink")
+	}
+}
+
+func TestRestorePersistedMutable_LogLevel(t *testing.T) {
+	repo, err := storage.Open(config.StorageConfig{Enabled: true, Path: ":memory:"})
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	if err := repo.SetConfig(context.Background(), "runtime.log_level", "debug"); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	engine := detector.NewEngine(config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+	})
+
+	restorePersistedMutable(context.Background(), repo, engine, nil)
+	// Without a real server, detection_enabled restore will skip srv.SetDetectionEnabled.
+	// log_level should be restored (SetLevel just changes slog default, no error).
+}
+
+func TestRestorePersistedMutable_DedupWindow(t *testing.T) {
+	repo, err := storage.Open(config.StorageConfig{Enabled: true, Path: ":memory:"})
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	if err := repo.SetConfig(context.Background(), "runtime.detection_dedup_window", "15s"); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	engine := detector.NewEngine(config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+	})
+
+	restorePersistedMutable(context.Background(), repo, engine, nil)
+}
+
+func TestRestorePersistedMutable_NoKeys(t *testing.T) {
+	repo, err := storage.Open(config.StorageConfig{Enabled: true, Path: ":memory:"})
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	engine := detector.NewEngine(config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+	})
+
+	// No keys stored — restore should be a no-op.
+	restorePersistedMutable(context.Background(), repo, engine, nil)
+}
+
+func TestRestorePersistedMutable_ParseErrors(t *testing.T) {
+	repo, err := storage.Open(config.StorageConfig{Enabled: true, Path: ":memory:"})
+	if err != nil {
+		t.Fatalf("storage.Open: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	// Invalid bool value for detection_enabled
+	if err := repo.SetConfig(context.Background(), "runtime.detection_enabled", "not-a-bool"); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	// Invalid duration for dedup_window
+	if err := repo.SetConfig(context.Background(), "runtime.detection_dedup_window", "not-a-duration"); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+
+	engine := detector.NewEngine(config.DetectionConfig{
+		Enabled:     true,
+		DedupWindow: 30 * time.Second,
+	})
+
+	// Should not panic, invalid values should be silently skipped.
+	restorePersistedMutable(context.Background(), repo, engine, nil)
+
+	// Detection should still be at its original state (config default).
+	if !engine.Enabled() {
+		t.Error("expected detection to remain enabled after invalid restore")
+	}
+}
+
 func TestIntegration_GracefulShutdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")

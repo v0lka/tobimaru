@@ -10,6 +10,9 @@ import (
 )
 
 // linuxMonitor implements MonitorModeManager using the iw and ip system utilities.
+// Netlink fallback (originally planned in the roadmap Phase 1.2) is not
+// implemented; iw via exec.CommandContext is the sole backend. Operators
+// must ensure iw and ip are installed and available in $PATH.
 type linuxMonitor struct{}
 
 // NewMonitorModeManager creates a MonitorModeManager backed by iw/ip commands.
@@ -50,6 +53,13 @@ func (m *linuxMonitor) DisableMonitor(ctx context.Context, iface string) error {
 		return fmt.Errorf("failed to bring up %s: %w", iface, err)
 	}
 	return nil
+}
+
+// SupportedChannels returns (nil, nil) on Linux, signaling that all
+// configured channels are assumed to be valid. Linux channel enumeration
+// via "iw list" requires parsing complex output; we rely on trial-and-error.
+func (m *linuxMonitor) SupportedChannels(_ context.Context, _ string) ([]int, error) {
+	return nil, nil
 }
 
 // SetChannel sets the interface to the specified WiFi channel.

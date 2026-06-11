@@ -129,9 +129,9 @@ func IsValidationError(err error) bool {
 // looksLikeBcrypt performs a syntactic check that the string is shaped like a
 // bcrypt-encoded password hash. The full check (CompareHashAndPassword) is
 // done at runtime by the auth layer; this guards against typos and missing
-// hashes at startup.
+// hashes at startup. Standard bcrypt hashes are exactly 60 characters.
 func looksLikeBcrypt(s string) bool {
-	if len(s) < 60 {
+	if len(s) != 60 {
 		return false
 	}
 	return strings.HasPrefix(s, "$2a$") ||
