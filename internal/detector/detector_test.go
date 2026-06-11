@@ -792,8 +792,8 @@ func TestFrameTypeName(t *testing.T) {
 	}{
 		{parser.FrameTypeAssocReq, "assoc_req"},
 		{parser.FrameTypeReassocReq, "reassoc_req"},
-		{parser.FrameTypeAuth, "auth"},
-		{parser.FrameTypeProbeRequest, "probe_request"},
+		{parser.FrameTypeAuth, frameTypeAuth},
+		{parser.FrameTypeProbeRequest, frameTypeProbeRequest},
 		{parser.FrameTypeDeauth, "Deauthentication"},
 		{parser.FrameTypeBeacon, "Beacon"},
 		{parser.FrameTypeUnknown, "Unknown"},

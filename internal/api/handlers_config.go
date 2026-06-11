@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -208,10 +209,7 @@ func stringifyValue(v any) (string, bool) {
 	case string:
 		return x, true
 	case bool:
-		if x {
-			return "true", true
-		}
-		return "false", true
+		return strconv.FormatBool(x), true
 	default:
 		return "", false
 	}

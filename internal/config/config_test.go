@@ -620,7 +620,7 @@ func TestStorageValidation_NegativeMaxSnapshots(t *testing.T) {
 	// Bypass defaults by constructing Config directly.
 	cfg := &Config{
 		Monitor: MonitorConfig{Interface: "wlan0",
-			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			Capture:        CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
 			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
 		},
 		Storage: StorageConfig{Enabled: true, Path: "/tmp/test.db", MaxSnapshots: -1, MaxEvents: 100},
@@ -635,7 +635,7 @@ func TestStorageValidation_NegativeMaxSnapshots(t *testing.T) {
 func TestStorageValidation_NegativeMaxEvents(t *testing.T) {
 	cfg := &Config{
 		Monitor: MonitorConfig{Interface: "wlan0",
-			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			Capture:        CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
 			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
 		},
 		Storage: StorageConfig{Enabled: true, Path: "/tmp/test.db", MaxSnapshots: 5, MaxEvents: -1},
@@ -650,7 +650,7 @@ func TestStorageValidation_NegativeMaxEvents(t *testing.T) {
 func TestAPIValidation_InvalidTimeout(t *testing.T) {
 	cfg := &Config{
 		Monitor: MonitorConfig{Interface: "wlan0",
-			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			Capture:        CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
 			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
 		},
 		API: APIConfig{Enabled: true, Listen: "127.0.0.1:8080",
@@ -666,7 +666,7 @@ func TestAPIValidation_InvalidTimeout(t *testing.T) {
 func TestAPIAuth_InvalidUserHash(t *testing.T) {
 	cfg := &Config{
 		Monitor: MonitorConfig{Interface: "wlan0",
-			Capture:       CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
+			Capture:        CaptureConfig{Snaplen: DefaultSnaplen, BufferSize: DefaultBufferSize, Timeout: time.Second},
 			ChannelHopping: ChannelHoppingConfig{Dwell: DefaultDwellTime},
 		},
 		API: APIConfig{Enabled: true, Listen: "127.0.0.1:8080",

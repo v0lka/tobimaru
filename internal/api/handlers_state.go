@@ -7,6 +7,9 @@ import (
 	"time"
 )
 
+// strTrue is the canonical string for boolean "true" in query parameters.
+const strTrue = "true"
+
 // listResponse is a thin envelope for paginated list endpoints. Total may be
 // -1 when the underlying source does not provide a separate count.
 type listResponse struct {
@@ -52,7 +55,7 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	associatedOnly := q.Get("associated") == "true"
+	associatedOnly := q.Get("associated") == strTrue
 	bssidFilter := strings.ToUpper(q.Get("bssid"))
 	since := parseTimeQuery(q.Get("since"))
 

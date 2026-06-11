@@ -19,9 +19,11 @@ LDFLAGS := -s -w \
 
 all: tidy web-deps web build ## Restore all dependencies, build web and then the Go binary
 
-check-web-dist: ## Warn if web/dist is missing (non-fatal)
+check-web-dist: ## Ensure a minimal dist/index.html exists for go:embed (non-fatal)
 	@if [ ! -f $(WEB_DIST_DIR)/index.html ]; then \
-		echo "warning: $(WEB_DIST_DIR)/index.html is missing; run 'make web' to rebuild the dashboard"; \
+		echo "info: $(WEB_DIST_DIR)/index.html is missing — creating placeholder (run 'make web' to build the dashboard)"; \
+		mkdir -p $(WEB_DIST_DIR); \
+		echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Tobimaru</title></head><body><h1>Tobimaru WiFi Watchdog</h1><p>The web dashboard has not been built yet. Run <code>make web</code> and restart.</p></body></html>' > $(WEB_DIST_DIR)/index.html; \
 	fi
 
 build: check-web-dist ## Build binary for the current platform (embeds web/dist)
@@ -50,8 +52,8 @@ test-cover: test ## Run tests and open coverage report
 GOLANGCI_LINT_VERSION := v2.12.2
 
 lint: ## Run golangci-lint
-	@actual=$$(golangci-lint --version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
-	if [ "$$actual" != "$(GOLANGCI_LINT_VERSION)" ]; then \
+	@actual=$$(golangci-lint --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+	if [ "$$actual" != "$(GOLANGCI_LINT_VERSION)" ] && [ "v$$actual" != "$(GOLANGCI_LINT_VERSION)" ] && [ "$$actual" != "v$(GOLANGCI_LINT_VERSION)" ]; then \
 		echo "ERROR: golangci-lint version mismatch: expected $(GOLANGCI_LINT_VERSION), got $$actual"; \
 		echo "Install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"; \
 		exit 1; \

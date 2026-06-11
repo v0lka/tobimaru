@@ -24,6 +24,9 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Create placeholder web dist
+        run: mkdir -p internal/api/web/dist && echo '<!doctype html><title>Tobimaru</title>' > internal/api/web/dist/index.html
+
       - name: Lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -74,6 +77,9 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Create placeholder web dist
+        run: mkdir -p internal/api/web/dist && echo '<!doctype html><title>Tobimaru</title>' > internal/api/web/dist/index.html
+
       - name: Test
         run: go test -race -cover -coverprofile=coverage.out ./...
 
@@ -94,6 +100,7 @@ jobs:
   build:
     name: "Build (${{ matrix.goos }}/${{ matrix.goarch }})"
     runs-on: ${{ matrix.runson }}
+    needs: [web]
     strategy:
       matrix:
         include:
@@ -119,6 +126,12 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Download web dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/api/web/dist
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -143,6 +156,7 @@ jobs:
   test-macos:
     name: Test (macOS)
     runs-on: macos-latest
+    needs: [web]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -151,6 +165,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+
+      - name: Download web dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/api/web/dist
 
       - name: Test
         env:

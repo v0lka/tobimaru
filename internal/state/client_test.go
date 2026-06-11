@@ -185,9 +185,9 @@ func TestClientMap_EvictProbeOnly(t *testing.T) {
 	now := time.Now()
 	// Add a probe-only client (no association).
 	m.Update(&ClientInfo{
-		MAC:       mac,
-		FirstSeen: now.Add(-time.Hour),
-		LastSeen:  now.Add(-time.Hour),
+		MAC:        mac,
+		FirstSeen:  now.Add(-time.Hour),
+		LastSeen:   now.Add(-time.Hour),
 		ProbeSSIDs: []string{"test"},
 	})
 	n := m.EvictProbeOnly(now)

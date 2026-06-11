@@ -1342,7 +1342,7 @@ func TestSessionFromCtx_Valid(t *testing.T) {
 
 func TestResolveSession_AuthDisabled(t *testing.T) {
 	srv, _ := testServer(t, false, "")
-	sess, err := srv.resolveSession(httptest.NewRequest(http.MethodGet, "/", nil))
+	sess, err := srv.resolveSession(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1489,8 +1489,8 @@ func TestHandleEvents_WithoutRepo(t *testing.T) {
 		config.WhitelistConfig{}, logger)
 	hub := NewHub(logger)
 	apiCfg := config.APIConfig{
-		Enabled:  true,
-		Listen:   "127.0.0.1:0",
+		Enabled: true,
+		Listen:  "127.0.0.1:0",
 	}
 	cfg := &config.Config{API: apiCfg, State: config.StateConfig{Enabled: true, TTL: time.Hour, SweepInterval: time.Minute}}
 	srv, err := NewServer(apiCfg, Deps{

@@ -51,10 +51,13 @@ go.work.sum
 .vscode/
 .qoder/
 
-# SPA / Node — keep `internal/api/web/dist/` (committed bundle), but ignore
-# Node's local artefacts that should never enter version control.
+# SPA / Node — keep Node's local artefacts out of version control.
+# The web dashboard bundle (internal/api/web/dist/) is NOT committed —
+# it is built on CI (`make web`) and downloaded as an artifact by build jobs,
+# or created as a minimal placeholder by the Makefile.
 web/node_modules/
 web/dist/
+internal/api/web/dist/
 web/.vite/
 *.tsbuildinfo
 tobimaru.db

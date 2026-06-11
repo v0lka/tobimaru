@@ -7,6 +7,13 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/parser"
 )
 
+const (
+	// frameTypeAuth is the metadata string for authentication frames.
+	frameTypeAuth = "auth"
+	// frameTypeProbeRequest is the metadata string for probe request frames.
+	frameTypeProbeRequest = "probe_request"
+)
+
 func invalidRuleConfig(ruleName, message string) error {
 	return fmt.Errorf("%s invalid config: %s", ruleName, message)
 }
@@ -37,9 +44,9 @@ func frameTypeName(frameType parser.FrameType) string {
 	case parser.FrameTypeReassocReq:
 		return "reassoc_req"
 	case parser.FrameTypeAuth:
-		return "auth"
+		return frameTypeAuth
 	case parser.FrameTypeProbeRequest:
-		return "probe_request"
+		return frameTypeProbeRequest
 	default:
 		return frameType.String()
 	}

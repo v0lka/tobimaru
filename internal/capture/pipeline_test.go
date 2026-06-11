@@ -379,17 +379,17 @@ func buildMinimalDot11Packet(t *testing.T) gopacket.Packet {
 	t.Helper()
 	var buf bytes.Buffer
 	// Radiotap (8 bytes, no fields).
-	binary.Write(&buf, binary.LittleEndian, uint8(0))
-	binary.Write(&buf, binary.LittleEndian, uint8(0))
-	binary.Write(&buf, binary.LittleEndian, uint16(8))
-	binary.Write(&buf, binary.LittleEndian, uint32(0))
+	_ = binary.Write(&buf, binary.LittleEndian, uint8(0))
+	_ = binary.Write(&buf, binary.LittleEndian, uint8(0))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(8))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(0))
 	// Dot11 beacon (24 bytes): type=Mgmt, subtype=Beacon=0x08.
-	binary.Write(&buf, binary.LittleEndian, uint16(0x0080)) // FC
-	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
-	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})  // DA (broadcast for beacon)
-	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // SA (== BSSID for beacon)
-	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // BSSID
-	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Seq
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0x0080)) // FC
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
+	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})       // DA (broadcast for beacon)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})       // SA (== BSSID for beacon)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})       // BSSID
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))      // Seq
 	// Beacon body: timestamp(8) + interval(2) + flags(2).
 	body := make([]byte, 12)
 	binary.LittleEndian.PutUint16(body[8:10], 100) // beacon interval

@@ -674,22 +674,22 @@ func buildAssocReqPacket(t *testing.T, payload []byte) gopacket.Packet {
 
 	var buf bytes.Buffer
 	// Radiotap header (8 bytes, no fields).
-	binary.Write(&buf, binary.LittleEndian, uint8(0))   // version
-	binary.Write(&buf, binary.LittleEndian, uint8(0))   // pad
-	binary.Write(&buf, binary.LittleEndian, uint16(8))  // length
-	binary.Write(&buf, binary.LittleEndian, uint32(0))  // present (no fields)
+	_ = binary.Write(&buf, binary.LittleEndian, uint8(0))  // version
+	_ = binary.Write(&buf, binary.LittleEndian, uint8(0))  // pad
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(8)) // length
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(0)) // present (no fields)
 
 	// Dot11 header (24 bytes): AssocReq (type=Mgmt, subtype=AssocReq=0x00).
-	binary.Write(&buf, binary.LittleEndian, uint16(0x0000)) // FrameControl: Mgmt|AssocReq
-	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
-	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})  // Address1 (DA)
-	buf.Write([]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})  // Address2 (SA)
-	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // Address3 (BSSID)
-	binary.Write(&buf, binary.LittleEndian, uint16(0))      // SequenceControl
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0x0000)) // FrameControl: Mgmt|AssocReq
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
+	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})       // Address1 (DA)
+	buf.Write([]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})       // Address2 (SA)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})       // Address3 (BSSID)
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))      // SequenceControl
 
 	// Dot11MgmtAssociationReq body (4 bytes): CapabilityInfo + ListenInterval.
-	binary.Write(&buf, binary.LittleEndian, uint16(0x0001)) // Capability (ESS)
-	binary.Write(&buf, binary.LittleEndian, uint16(10))     // ListenInterval
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0x0001)) // Capability (ESS)
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(10))     // ListenInterval
 
 	// Payload (IE bytes).
 	buf.Write(payload)
@@ -704,18 +704,18 @@ func buildProbeReqPacket(t *testing.T, payload []byte) gopacket.Packet {
 
 	var buf bytes.Buffer
 	// Radiotap header (8 bytes, no fields).
-	binary.Write(&buf, binary.LittleEndian, uint8(0))   // version
-	binary.Write(&buf, binary.LittleEndian, uint8(0))   // pad
-	binary.Write(&buf, binary.LittleEndian, uint16(8))  // length
-	binary.Write(&buf, binary.LittleEndian, uint32(0))  // present
+	_ = binary.Write(&buf, binary.LittleEndian, uint8(0))  // version
+	_ = binary.Write(&buf, binary.LittleEndian, uint8(0))  // pad
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(8)) // length
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(0)) // present
 
 	// Dot11 header (24 bytes): ProbeReq (type=Mgmt, subtype=ProbeReq=0x04).
-	binary.Write(&buf, binary.LittleEndian, uint16(0x0040)) // FrameControl: Mgmt|ProbeReq
-	binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
-	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})  // Address1 (DA)
-	buf.Write([]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})  // Address2 (SA)
-	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})  // Address3 (BSSID)
-	binary.Write(&buf, binary.LittleEndian, uint16(0))      // SequenceControl
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0x0040)) // FrameControl: Mgmt|ProbeReq
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))      // Duration
+	buf.Write([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})       // Address1 (DA)
+	buf.Write([]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55})       // Address2 (SA)
+	buf.Write([]byte{0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff})       // Address3 (BSSID)
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))      // SequenceControl
 
 	// Payload (IE bytes, ProbeReq has no own body fields).
 	buf.Write(payload)

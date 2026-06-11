@@ -125,7 +125,7 @@ func TestUnauthorizedDeviceRule_UnknownDeviceGeneratesEvent(t *testing.T) {
 	if ev.BSSID.String() != "aa:bb:cc:dd:ee:ff" {
 		t.Errorf("BSSID = %s, want protected BSSID", ev.BSSID)
 	}
-	if ev.Metadata["frame_type"] != "auth" {
+	if ev.Metadata["frame_type"] != frameTypeAuth {
 		t.Errorf("frame_type metadata = %v, want auth", ev.Metadata["frame_type"])
 	}
 	if ev.Metadata["protected_target"] != "aa:bb:cc:dd:ee:ff" {
@@ -215,7 +215,7 @@ func TestUnauthorizedDeviceRule_ProbeRequestMatchesProtectedSSID(t *testing.T) {
 		t.Fatalf("Process() returned %d events, want 1 for probe request to protected SSID", len(events))
 	}
 
-	if events[0].Metadata["frame_type"] != "probe_request" {
+	if events[0].Metadata["frame_type"] != frameTypeProbeRequest {
 		t.Errorf("frame_type metadata = %v, want probe_request", events[0].Metadata["frame_type"])
 	}
 
