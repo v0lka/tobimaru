@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/vkochetkov/tobimaru/internal/config"
-	"github.com/vkochetkov/tobimaru/internal/logging"
 )
 
 // redactedSecret is the placeholder substituted for sensitive fields in
@@ -122,7 +121,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) { //nol
 
 	if v, ok := raw["log_level"]; ok {
 		level, ok := v.(string)
-		if !ok || !logging.SetLevel(strings.TrimSpace(level)) {
+		if !ok || !s.levelCtrl.Set(strings.TrimSpace(level)) {
 			writeProblem(w, s.logger, http.StatusBadRequest, errTypeBadRequest,
 				"log_level must be one of: debug, info, warn, error")
 			return
@@ -169,7 +168,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) { //nol
 // currentMutable returns the current values of fields exposed by PUT /api/config.
 func (s *Server) currentMutable() mutableConfig {
 	out := mutableConfig{
-		LogLevel:         logging.Level(),
+		LogLevel:         s.levelCtrl.Level(),
 		DetectionEnabled: s.detectionEnabled.Load(),
 	}
 	if s.deps.Detector != nil {

@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/term"
 
 	"github.com/vkochetkov/tobimaru/internal/api"
 	"github.com/vkochetkov/tobimaru/internal/capture"
@@ -39,7 +39,7 @@ const pruneEventInterval uint64 = 100
 func main() { //nolint:gocyclo // orchestrator with linear initialization sequence
 	flagConfig := flag.String("config", "configs/tobimaru.yaml", "path to configuration file")
 	flagVersion := flag.Bool("version", false, "print version and exit")
-	flagHashPassword := flag.String("hash-password", "", "print bcrypt hash for the given plaintext password and exit")
+	flagHashPassword := flag.Bool("hash-password", false, "prompt for a password interactively, print its bcrypt hash, and exit")
 	flag.Parse()
 
 	if *flagVersion {
@@ -47,8 +47,15 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		return
 	}
 
-	if *flagHashPassword != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(*flagHashPassword), bcrypt.DefaultCost)
+	if *flagHashPassword {
+		fmt.Fprint(os.Stderr, "Enter password: ")
+		password, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\nfailed to read password: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr) // newline after password input (ReadPassword does not echo)
+		hash, err := bcrypt.GenerateFromPassword(password, bcrypt.DefaultCost)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to hash password: %v\n", err)
 			os.Exit(1)
@@ -63,7 +70,7 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		os.Exit(1)
 	}
 
-	logger := logging.New(cfg.Log)
+	logger, levelCtrl := logging.New(cfg.Log)
 	slog.SetDefault(logger)
 
 	slog.Info("Tobimaru WiFi Watchdog starting",
@@ -136,8 +143,8 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 	}
 
 	// Register shutdown hooks.
-	sm.Register("capture_stop", func() error {
-		return pipeline.Stop(context.Background())
+	sm.Register("capture_stop", func(ctx context.Context) error {
+		return pipeline.Stop(ctx)
 	})
 
 	registerDetectionRules(engine, cfg.Detection)
@@ -147,7 +154,7 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 	}
 
 	if repo != nil {
-		sm.Register("storage_close", func() error {
+		sm.Register("storage_close", func(_ context.Context) error {
 			return repo.Close()
 		})
 	}
@@ -246,6 +253,7 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 			Hub:       apiHub,
 			StartTime: startTime,
 			Logger:    logger,
+			LevelCtrl: levelCtrl,
 		})
 		if err != nil {
 			slog.Error("Failed to create API server", "error", err)
@@ -255,7 +263,7 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		// log_level, detection_enabled, and detection_dedup_window survive
 		// daemon restarts.
 		if repo != nil {
-			restorePersistedMutable(signalCtx, repo, engine, apiSrv)
+			restorePersistedMutable(signalCtx, repo, engine, apiSrv, levelCtrl)
 		}
 		consumerWG.Go(func() { apiHub.Run(signalCtx) })
 		consumerWG.Go(func() {
@@ -283,17 +291,17 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 				}
 			}
 		})
-		sm.Register("api_stop", func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), cfg.API.ShutdownTimeout)
+		sm.Register("api_stop", func(ctx context.Context) error {
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.API.ShutdownTimeout)
 			defer cancel()
-			return apiSrv.Shutdown(ctx)
+			return apiSrv.Shutdown(shutdownCtx)
 		})
 	}
 
 	// Wait for consumer goroutines to drain their channels and log final
 	// stats before shutdown completes. The hook respects the shutdown
 	// context's deadline.
-	sm.Register("consumer_stop", func() error {
+	sm.Register("consumer_stop", func(ctx context.Context) error {
 		done := make(chan struct{})
 		go func() {
 			consumerWG.Wait()
@@ -302,8 +310,8 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 		select {
 		case <-done:
 			return nil
-		case <-time.After(10 * time.Second):
-			return errors.New("consumer goroutines did not exit within 10s")
+		case <-ctx.Done():
+			return fmt.Errorf("consumer goroutines did not exit: %w", ctx.Err())
 		}
 	})
 
@@ -313,13 +321,13 @@ func main() { //nolint:gocyclo // orchestrator with linear initialization sequen
 	slog.Info("received shutdown signal")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	if err := sm.Shutdown(shutdownCtx); err != nil {
 		cancel()
 		slog.Error("Shutdown completed with errors", "error", err)
 		os.Exit(1)
 	}
-	cancel()
 
 	slog.Info("Shutdown complete")
 }
@@ -530,7 +538,7 @@ func registerDetectionRules(engine *detector.Engine, cfg config.DetectionConfig)
 // restorePersistedMutable reads runtime-mutable settings from the SQLite KV
 // store and applies them to the live subsystems. This makes runtime changes
 // (e.g., log_level, detection toggle) survive daemon restarts.
-func restorePersistedMutable(ctx context.Context, repo storage.Repository, engine *detector.Engine, srv *api.Server) {
+func restorePersistedMutable(ctx context.Context, repo storage.Repository, engine *detector.Engine, srv *api.Server, lc *logging.LevelControl) {
 	applyKV := func(key string, apply func(string)) {
 		val, err := repo.GetConfig(ctx, "runtime."+key)
 		if err != nil {
@@ -540,7 +548,7 @@ func restorePersistedMutable(ctx context.Context, repo storage.Repository, engin
 	}
 
 	applyKV("log_level", func(val string) {
-		if logging.SetLevel(strings.TrimSpace(val)) {
+		if lc.Set(strings.TrimSpace(val)) {
 			slog.Info("restored persisted log level", "level", val)
 		}
 	})
@@ -550,7 +558,9 @@ func restorePersistedMutable(ctx context.Context, repo storage.Repository, engin
 			return
 		}
 		engine.SetEnabled(b)
-		srv.SetDetectionEnabled(b)
+		if srv != nil {
+			srv.SetDetectionEnabled(b)
+		}
 		slog.Info("restored persisted detection state", "enabled", b)
 	})
 	applyKV("detection_dedup_window", func(val string) {

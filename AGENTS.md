@@ -10,14 +10,14 @@ The project follows Phases (0–12) as defined in `docs/development/wifi-watchdo
 
 ## Project Status
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 0 | ✅ Complete | Foundation (config, logging, shutdown, version, CI) |
-| 1 | ✅ Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing) |
-| 2 | ✅ Complete | Detection Engine (rule interface, dedup, event model, and concrete rules: deauth/disassoc/beacon flood, evil twin, unauthorized device — all with unit + pcap integration tests) |
-| 3 | ✅ Complete | Network State & Storage (AP/client tracking, whitelist/blacklist, SQLite persistence) |
-| 4 | ✅ Complete | REST API & Dashboard (chi, SSE, React 19 SPA, auth with admin/user roles) |
-| 5 | ✅ Complete | Cross-platform (macOS support via CoreWLAN + BPF, Linux native, runtime capability detection) |
+| Phase | Status      | Description                                                                                                                                                                      |
+| ----- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | ✅ Complete | Foundation (config, logging, shutdown, version, CI)                                                                                                                              |
+| 1     | ✅ Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing)                                                                                                                    |
+| 2     | ✅ Complete | Detection Engine (rule interface, dedup, event model, and concrete rules: deauth/disassoc/beacon flood, evil twin, unauthorized device — all with unit + pcap integration tests) |
+| 3     | ✅ Complete | Network State & Storage (AP/client tracking, whitelist/blacklist, SQLite persistence)                                                                                            |
+| 4     | ✅ Complete | REST API & Dashboard (chi, SSE, React 19 SPA, auth with admin/user roles)                                                                                                        |
+| 5     | ✅ Complete | Cross-platform (macOS support via CoreWLAN + BPF, Linux native, runtime capability detection)                                                                                    |
 
 Two components span the entire project:
 
@@ -35,13 +35,13 @@ Two components span the entire project:
 
 ## Key Dependencies
 
-| Module | Purpose |
-|--------|---------|
-| `gopkg.in/yaml.v3` | YAML config parsing (strict, KnownFields) |
-| `github.com/gopacket/gopacket` | pcap capture + 802.11 frame decoding |
-| `github.com/go-chi/chi/v5` | HTTP router for REST API |
-| `golang.org/x/crypto` | bcrypt password hashing |
-| `modernc.org/sqlite` | Pure-Go SQLite (CGO-free) |
+| Module                         | Purpose                                   |
+| ------------------------------ | ----------------------------------------- |
+| `gopkg.in/yaml.v3`             | YAML config parsing (strict, KnownFields) |
+| `github.com/gopacket/gopacket` | pcap capture + 802.11 frame decoding      |
+| `github.com/go-chi/chi/v5`     | HTTP router for REST API                  |
+| `golang.org/x/crypto`          | bcrypt password hashing                   |
+| `modernc.org/sqlite`           | Pure-Go SQLite (CGO-free)                 |
 
 ## Architecture
 
@@ -130,11 +130,12 @@ cd web && npm run dev
 
 The `-hash-password` flag is a built-in bcrypt hash utility. Passwords are
 never stored in plaintext — the YAML config accepts only pre-hashed values in
-`auth.admin_password_hash` and `auth.user_password_hash`. This flag generates
-those hashes directly from the binary, no external tools needed.
+`auth.admin_password_hash` and `auth.user_password_hash`. The flag prompts
+for the password interactively (without echo) so the password never appears
+in the process listing or shell history. No external tools are needed.
 
 ```bash
-./bin/tobimaru -hash-password "mypassword"
+./bin/tobimaru -hash-password
 ```
 
 ## Startup Sequence
@@ -142,8 +143,9 @@ those hashes directly from the binary, no external tools needed.
 The orchestrator (`cmd/tobimaru/main.go`) follows this sequence:
 
 1. Parse CLI flags (`-config`, `-version`, `-hash-password`).
-   `-hash-password` is a standalone utility — it prints a bcrypt hash and
-   exits. The daemon does not start when this flag is set.
+   `-hash-password` is a standalone utility — it prompts for a password
+   interactively, prints a bcrypt hash, and exits. The daemon does not start
+   when this flag is set.
 2. Load and validate YAML configuration
 3. Initialize structured logger
 4. Open SQLite storage (if enabled)

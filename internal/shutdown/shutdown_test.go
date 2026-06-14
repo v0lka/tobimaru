@@ -14,15 +14,15 @@ func TestRegisterAndShutdown(t *testing.T) {
 	var order []string
 	m := NewManager()
 
-	m.Register("first", func() error {
+	m.Register("first", func(_ context.Context) error {
 		order = append(order, "first")
 		return nil
 	})
-	m.Register("second", func() error {
+	m.Register("second", func(_ context.Context) error {
 		order = append(order, "second")
 		return nil
 	})
-	m.Register("third", func() error {
+	m.Register("third", func(_ context.Context) error {
 		order = append(order, "third")
 		return nil
 	})
@@ -50,10 +50,10 @@ func TestRegisterAndShutdown(t *testing.T) {
 func TestShutdownWithError(t *testing.T) {
 	m := NewManager()
 	cleanupErr := errors.New("cleanup failed")
-	m.Register("failing", func() error {
+	m.Register("failing", func(_ context.Context) error {
 		return cleanupErr
 	})
-	m.Register("success", func() error {
+	m.Register("success", func(_ context.Context) error {
 		return nil
 	})
 
@@ -71,7 +71,7 @@ func TestShutdownWithError(t *testing.T) {
 
 func TestShutdownTimeout(t *testing.T) {
 	m := NewManager()
-	m.Register("slow", func() error {
+	m.Register("slow", func(_ context.Context) error {
 		time.Sleep(2 * time.Second)
 		return nil
 	})
@@ -94,7 +94,7 @@ func TestShutdownPartialErrors(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		name := fmt.Sprintf("hook%d", i)
-		m.Register(name, func() error {
+		m.Register(name, func(_ context.Context) error {
 			executed = append(executed, name)
 			if name == "hook2" {
 				return errors.New("failure in " + name)
@@ -155,7 +155,7 @@ func TestConcurrentRegistration(t *testing.T) {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			m.Register(fmt.Sprintf("hook%d", n), func() error { return nil })
+			m.Register(fmt.Sprintf("hook%d", n), func(_ context.Context) error { return nil })
 		}(i)
 	}
 	wg.Wait()

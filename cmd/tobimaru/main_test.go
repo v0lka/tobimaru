@@ -13,6 +13,7 @@ import (
 
 	"github.com/vkochetkov/tobimaru/internal/config"
 	"github.com/vkochetkov/tobimaru/internal/detector"
+	"github.com/vkochetkov/tobimaru/internal/logging"
 	"github.com/vkochetkov/tobimaru/internal/parser"
 	"github.com/vkochetkov/tobimaru/internal/state"
 	"github.com/vkochetkov/tobimaru/internal/storage"
@@ -602,9 +603,9 @@ func TestRestorePersistedMutable_LogLevel(t *testing.T) {
 		DedupWindow: 30 * time.Second,
 	})
 
-	restorePersistedMutable(context.Background(), repo, engine, nil)
+	restorePersistedMutable(context.Background(), repo, engine, nil, logging.NewLevelControl("info"))
 	// Without a real server, detection_enabled restore will skip srv.SetDetectionEnabled.
-	// log_level should be restored (SetLevel just changes slog default, no error).
+	// log_level should be restored (LevelControl.Set just changes slog default, no error).
 }
 
 func TestRestorePersistedMutable_DedupWindow(t *testing.T) {
@@ -623,7 +624,7 @@ func TestRestorePersistedMutable_DedupWindow(t *testing.T) {
 		DedupWindow: 30 * time.Second,
 	})
 
-	restorePersistedMutable(context.Background(), repo, engine, nil)
+	restorePersistedMutable(context.Background(), repo, engine, nil, logging.NewLevelControl("info"))
 }
 
 func TestRestorePersistedMutable_NoKeys(t *testing.T) {
@@ -639,7 +640,7 @@ func TestRestorePersistedMutable_NoKeys(t *testing.T) {
 	})
 
 	// No keys stored — restore should be a no-op.
-	restorePersistedMutable(context.Background(), repo, engine, nil)
+	restorePersistedMutable(context.Background(), repo, engine, nil, logging.NewLevelControl("info"))
 }
 
 func TestRestorePersistedMutable_ParseErrors(t *testing.T) {
@@ -664,7 +665,7 @@ func TestRestorePersistedMutable_ParseErrors(t *testing.T) {
 	})
 
 	// Should not panic, invalid values should be silently skipped.
-	restorePersistedMutable(context.Background(), repo, engine, nil)
+	restorePersistedMutable(context.Background(), repo, engine, nil, logging.NewLevelControl("info"))
 
 	// Detection should still be at its original state (config default).
 	if !engine.Enabled() {

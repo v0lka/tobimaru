@@ -11,33 +11,38 @@ Creates a configured `*slog.Logger` from a `LogConfig` struct, mapping string-ba
 
 ## Core Types
 
-No custom types exported. The package exposes a factory function and runtime level accessors:
+The package exposes the `LevelControl` type and related functions for runtime log-level management:
 
 ```go
-func New(cfg config.LogConfig) *slog.Logger
-func SetLevel(s string) bool
-func Level() string
+type LevelControl struct { /* contains a *slog.LevelVar */ }
+
+func New(cfg config.LogConfig) (*slog.Logger, *LevelControl)
+func NewLevelControl(level string) *LevelControl
+func (lc *LevelControl) Set(s string) bool
+func (lc *LevelControl) Level() string
 ```
 
-- `New()` creates a logger backed by a package-level `slog.LevelVar`. All loggers share this LevelVar, enabling runtime adjustments.
-- `SetLevel(s)` atomically updates the effective log level. Accepts `"debug"`, `"info"`, `"warn"`, `"error"`. Returns `false` for unknown strings.
+- `New()` creates a logger and an associated `LevelControl`. Each logger gets its own `slog.LevelVar`, so independent loggers do not interfere with each other.
+- `NewLevelControl(level)` creates a standalone `LevelControl` without a full logger — useful in tests or when wiring dependencies before the logger is constructed.
+- `Set(s)` atomically updates the effective log level. Accepts `"debug"`, `"info"`, `"warn"`, `"error"`. Returns `false` for unknown strings.
 - `Level()` returns the current effective level as a string.
 
 ## Behavior
 
-### `New(cfg config.LogConfig) *slog.Logger`
+### `New(cfg config.LogConfig) (*slog.Logger, *LevelControl)`
 
-1. Maps `cfg.Level` to `slog.Level` via `parseLevel()`:
+1. Creates a `LevelControl` with a new `slog.LevelVar`
+2. Maps `cfg.Level` to `slog.Level` via `parseLevel()`:
    - `"debug"` → `slog.LevelDebug`
    - `"info"` → `slog.LevelInfo`
    - `"warn"` → `slog.LevelWarn`
    - `"error"` → `slog.LevelError`
    - Anything else → `slog.LevelInfo` (defensive fallback; config validation catches this earlier)
-2. Creates a `slog.HandlerOptions` with the mapped level
-3. Selects handler based on `cfg.Format`:
+3. Creates a `slog.HandlerOptions` with the mapped level
+4. Selects handler based on `cfg.Format`:
    - `"json"` → `slog.NewJSONHandler(os.Stdout, opts)`
    - Anything else → `slog.NewTextHandler(os.Stdout, opts)`
-4. Returns `slog.New(handler)`
+5. Returns `slog.New(handler)` and the `LevelControl`
 
 ### `parseLevel(s string) slog.Level`
 
@@ -59,9 +64,11 @@ logging.New(LogConfig{Level: "info", Format: "text"})
 
 In `cmd/tobimaru/main.go`, the returned logger is set as the default:
 ```go
-logger := logging.New(cfg.Log)
+logger, levelCtrl := logging.New(cfg.Log)
 slog.SetDefault(logger)
 ```
+
+**`slog.SetDefault` contract:** The default logger shares the same `slog.LevelVar` as the `LevelControl`. Calling `LevelControl.Set()` therefore affects both the explicit logger and the default logger. `slog.SetDefault` must NOT be called again after initialization with a different logger — doing so silently decouples the default logger from runtime level control.
 
 ## Invariants
 

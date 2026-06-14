@@ -97,7 +97,7 @@ Setup steps:
    ```yaml
    monitor:
      channel_hopping:
-       dwell: 2s  # Increase from default 300ms due to slow channel switching
+       dwell: 2s # Increase from default 300ms due to slow channel switching
    ```
 
 See `docs/development/macos-setup.md` for ChmodBPF and LaunchDaemon recipes.
@@ -118,82 +118,82 @@ at a custom path.
 
 #### `log` — Logging
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `level` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
-| `format` | string | `text` | Output format: `text` (human-readable) or `json` (structured) |
+| Field    | Type   | Default | Description                                                   |
+| -------- | ------ | ------- | ------------------------------------------------------------- |
+| `level`  | string | `info`  | Log level: `debug`, `info`, `warn`, `error`                   |
+| `format` | string | `text`  | Output format: `text` (human-readable) or `json` (structured) |
 
 #### `monitor` — WiFi Interface
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `interface` | string | — | **Required.** WiFi interface name (e.g., `wlan0`, `en0`) |
+| Field       | Type   | Default | Description                                              |
+| ----------- | ------ | ------- | -------------------------------------------------------- |
+| `interface` | string | —       | **Required.** WiFi interface name (e.g., `wlan0`, `en0`) |
 
 #### `monitor.capture` — Packet Capture
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `snaplen` | int | `65535` | Maximum bytes captured per frame |
-| `buffer_size` | int | `2097152` | Kernel buffer size in bytes (2 MB) |
-| `frame_buffer_size` | int | `1024` | Capacity of the parsed-frame channel |
-| `promiscuous` | bool | `true` | Enable promiscuous mode |
-| `timeout` | duration | `100ms` | Read timeout for the pcap handle |
+| Field               | Type     | Default   | Description                          |
+| ------------------- | -------- | --------- | ------------------------------------ |
+| `snaplen`           | int      | `65535`   | Maximum bytes captured per frame     |
+| `buffer_size`       | int      | `2097152` | Kernel buffer size in bytes (2 MB)   |
+| `frame_buffer_size` | int      | `1024`    | Capacity of the parsed-frame channel |
+| `promiscuous`       | bool     | `true`    | Enable promiscuous mode              |
+| `timeout`           | duration | `100ms`   | Read timeout for the pcap handle     |
 
 #### `monitor.channel_hopping` — Channel Scanning
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `true` | Enable channel hopping |
-| `dwell` | duration | `300ms` | Base time spent on each channel |
-| `channels_2ghz` | []int | `[1..13]` | 2.4 GHz channels to scan |
-| `include_5ghz` | bool | `false` | Enable 5 GHz band scanning |
-| `channels_5ghz` | []int | — | 5 GHz channels (when enabled) |
+| Field           | Type     | Default   | Description                     |
+| --------------- | -------- | --------- | ------------------------------- |
+| `enabled`       | bool     | `true`    | Enable channel hopping          |
+| `dwell`         | duration | `300ms`   | Base time spent on each channel |
+| `channels_2ghz` | []int    | `[1..13]` | 2.4 GHz channels to scan        |
+| `include_5ghz`  | bool     | `false`   | Enable 5 GHz band scanning      |
+| `channels_5ghz` | []int    | —         | 5 GHz channels (when enabled)   |
 
 #### `monitor.channel_hopping.weighted_dwell` — Priority Channels
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `true` | Give primary channels more dwell time |
-| `primary_channels` | []int | `[1, 6, 11]` | Channels with extended dwell |
-| `multiplier` | float | `2.5` | Dwell time multiplier for primary channels |
+| Field              | Type  | Default      | Description                                |
+| ------------------ | ----- | ------------ | ------------------------------------------ |
+| `enabled`          | bool  | `true`       | Give primary channels more dwell time      |
+| `primary_channels` | []int | `[1, 6, 11]` | Channels with extended dwell               |
+| `multiplier`       | float | `2.5`        | Dwell time multiplier for primary channels |
 
 Primary channels (1, 6, 11) are the most commonly used non-overlapping 2.4 GHz
 channels. Weighted dwell gives them more monitoring time.
 
 #### `detection` — Detection Engine
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Master switch for the detection engine |
-| `dedup_window` | duration | `30s` | Suppress duplicate alerts within this window |
-| `alert_buffer_size` | int | `256` | Buffered alerts channel capacity |
+| Field               | Type     | Default | Description                                  |
+| ------------------- | -------- | ------- | -------------------------------------------- |
+| `enabled`           | bool     | `false` | Master switch for the detection engine       |
+| `dedup_window`      | duration | `30s`   | Suppress duplicate alerts within this window |
+| `alert_buffer_size` | int      | `256`   | Buffered alerts channel capacity             |
 
 The engine ships with five rules. Each rule is configured under `detection.<rule_name>`:
 
-| Rule | YAML key | Default `enabled` | Notes |
-|------|----------|-------------------|-------|
-| Deauthentication flood | `deauth_flood` | `true` | Sliding-window counter on deauth frames |
-| Disassociation flood | `disassoc_flood` | `true` | Sliding-window counter on disassoc frames |
-| Beacon flood | `beacon_flood` | `true` | Spike of unique BSSIDs after a learning period |
-| Evil Twin AP | `evil_twin` | `true` | SSID/BSSID/IE divergence with score threshold |
-| Unauthorized device | `unauthorized_device` | `false` | Whitelist lookup; requires `protected_bssids`/`protected_ssids` |
+| Rule                   | YAML key              | Default `enabled` | Notes                                                           |
+| ---------------------- | --------------------- | ----------------- | --------------------------------------------------------------- |
+| Deauthentication flood | `deauth_flood`        | `true`            | Sliding-window counter on deauth frames                         |
+| Disassociation flood   | `disassoc_flood`      | `true`            | Sliding-window counter on disassoc frames                       |
+| Beacon flood           | `beacon_flood`        | `true`            | Spike of unique BSSIDs after a learning period                  |
+| Evil Twin AP           | `evil_twin`           | `true`            | SSID/BSSID/IE divergence with score threshold                   |
+| Unauthorized device    | `unauthorized_device` | `false`           | Whitelist lookup; requires `protected_bssids`/`protected_ssids` |
 
 Common rule fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `enabled` | bool | Toggle for that rule |
-| `threshold` | int | Trigger threshold (flood rules) |
-| `window` | duration | Sliding-window length (flood rules) |
-| `learning_period` | duration | Initial mute window (`beacon_flood`, `evil_twin`) |
-| `score_threshold` | int | Cumulative score before alerting (`evil_twin`) |
-| `stale_timeout` | duration | Forget APs after this (`evil_twin`) |
-| `min_beacons` | int | Minimum beacons before scoring (`evil_twin`) |
-| `protected_bssids` | []string | Defended AP MACs (`unauthorized_device`) |
-| `protected_ssids` | []string | Defended SSIDs (`unauthorized_device`) |
-| `whitelist` | []string | Allowed client MACs (`unauthorized_device`) |
-| `alert_on_probe` | bool | Alert on probe requests (`unauthorized_device`) |
-| `cooldown` | duration | Per-MAC mute (`unauthorized_device`) |
+| Field              | Type     | Description                                       |
+| ------------------ | -------- | ------------------------------------------------- |
+| `enabled`          | bool     | Toggle for that rule                              |
+| `threshold`        | int      | Trigger threshold (flood rules)                   |
+| `window`           | duration | Sliding-window length (flood rules)               |
+| `learning_period`  | duration | Initial mute window (`beacon_flood`, `evil_twin`) |
+| `score_threshold`  | int      | Cumulative score before alerting (`evil_twin`)    |
+| `stale_timeout`    | duration | Forget APs after this (`evil_twin`)               |
+| `min_beacons`      | int      | Minimum beacons before scoring (`evil_twin`)      |
+| `protected_bssids` | []string | Defended AP MACs (`unauthorized_device`)          |
+| `protected_ssids`  | []string | Defended SSIDs (`unauthorized_device`)            |
+| `whitelist`        | []string | Allowed client MACs (`unauthorized_device`)       |
+| `alert_on_probe`   | bool     | Alert on probe requests (`unauthorized_device`)   |
+| `cooldown`         | duration | Per-MAC mute (`unauthorized_device`)              |
 
 Set `detection.enabled: true` to start emitting alerts. The shipped
 `configs/tobimaru.yaml` keeps detection disabled by default so the daemon can
@@ -201,53 +201,53 @@ be exercised in capture-only mode.
 
 #### `state` — Network State Engine
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `true` | Track APs and clients in memory |
-| `ttl` | duration | `10m` | Drop entries unseen for this long |
-| `sweep_interval` | duration | `1m` | How often eviction runs |
+| Field            | Type     | Default | Description                       |
+| ---------------- | -------- | ------- | --------------------------------- |
+| `enabled`        | bool     | `true`  | Track APs and clients in memory   |
+| `ttl`            | duration | `10m`   | Drop entries unseen for this long |
+| `sweep_interval` | duration | `1m`    | How often eviction runs           |
 
 Disabling the state engine also disables snapshots, auto-learning and the
 state-driven detection rules in the dashboard.
 
 #### `whitelist.auto_learning` — Auto-Learning
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Enter learning mode at startup |
-| `duration` | duration | `15m` | Learning phase length |
+| Field      | Type     | Default | Description                    |
+| ---------- | -------- | ------- | ------------------------------ |
+| `enabled`  | bool     | `false` | Enter learning mode at startup |
+| `duration` | duration | `15m`   | Learning phase length          |
 
 While learning, every observed device is added to the in-memory whitelist (and
 persisted if `storage.enabled` is true).
 
 #### `storage` — SQLite Persistence
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Master switch for SQLite persistence |
-| `path` | string | `tobimaru.db` | Database file (created with `0600` perms) |
-| `snapshot_interval` | duration | `5m` | State snapshot cadence |
-| `max_snapshots` | int | `288` | Snapshot retention (~24h at 5 min) |
-| `max_events` | int | `100000` | Security event retention (pruned every 100 inserts) |
+| Field               | Type     | Default       | Description                                         |
+| ------------------- | -------- | ------------- | --------------------------------------------------- |
+| `enabled`           | bool     | `false`       | Master switch for SQLite persistence                |
+| `path`              | string   | `tobimaru.db` | Database file (created with `0600` perms)           |
+| `snapshot_interval` | duration | `5m`          | State snapshot cadence                              |
+| `max_snapshots`     | int      | `288`         | Snapshot retention (~24h at 5 min)                  |
+| `max_events`        | int      | `100000`      | Security event retention (pruned every 100 inserts) |
 
 Tobimaru uses a pure-Go SQLite driver (no CGO). The file is created or
 chmod-ed to `0600` on open.
 
 #### `api` — HTTP API + Dashboard
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `false` | Start the HTTP server and serve the dashboard |
-| `listen` | string | `127.0.0.1:8080` | Bind address (use a reverse proxy for remote access) |
-| `read_timeout` | duration | `15s` | HTTP read timeout |
-| `write_timeout` | duration | `30s` | HTTP write timeout (SSE bypasses this per-request) |
-| `idle_timeout` | duration | `60s` | Idle keep-alive timeout |
-| `shutdown_timeout` | duration | `5s` | Graceful HTTP shutdown deadline |
-| `cors.allowed_origins` | []string | `[]` | Empty = same-origin only |
-| `auth.enabled` | bool | `true` | Require login for the dashboard and API |
-| `auth.session_ttl` | duration | `24h` | Session token lifetime |
-| `auth.admin_password_hash` | string | — | bcrypt hash, required when `auth.enabled` is `true` |
-| `auth.user_password_hash` | string | — | Optional read-only account; empty disables it |
+| Field                      | Type     | Default          | Description                                          |
+| -------------------------- | -------- | ---------------- | ---------------------------------------------------- |
+| `enabled`                  | bool     | `false`          | Start the HTTP server and serve the dashboard        |
+| `listen`                   | string   | `127.0.0.1:8080` | Bind address (use a reverse proxy for remote access) |
+| `read_timeout`             | duration | `15s`            | HTTP read timeout                                    |
+| `write_timeout`            | duration | `30s`            | HTTP write timeout (SSE bypasses this per-request)   |
+| `idle_timeout`             | duration | `60s`            | Idle keep-alive timeout                              |
+| `shutdown_timeout`         | duration | `5s`             | Graceful HTTP shutdown deadline                      |
+| `cors.allowed_origins`     | []string | `[]`             | Empty = same-origin only                             |
+| `auth.enabled`             | bool     | `true`           | Require login for the dashboard and API              |
+| `auth.session_ttl`         | duration | `24h`            | Session token lifetime                               |
+| `auth.admin_password_hash` | string   | —                | bcrypt hash, required when `auth.enabled` is `true`  |
+| `auth.user_password_hash`  | string   | —                | Optional read-only account; empty disables it        |
 
 When `auth.enabled` is `true`, `storage.enabled` MUST also be `true` because
 sessions are persisted in SQLite.
@@ -274,17 +274,18 @@ All other fields use sensible defaults.
 
 ### Command-Line Flags
 
-| Flag | Description |
-|------|-------------|
-| `-config <path>` | Path to YAML configuration file (default: `configs/tobimaru.yaml`) |
-| `-version` | Print version information and exit |
-| `-hash-password <plaintext>` | Print a bcrypt hash for the given password and exit |
+| Flag             | Description                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `-config <path>` | Path to YAML configuration file (default: `configs/tobimaru.yaml`)                             |
+| `-version`       | Print version information and exit                                                             |
+| `-hash-password` | Prompt for a password interactively without visual output and print its bcrypt hash, then exit |
 
 This flag is a built-in utility for generating bcrypt hashes to place in
 the configuration file. The daemon never stores passwords in plaintext —
 `auth.admin_password_hash` and `auth.user_password_hash` in the YAML config
-accept only pre-hashed bcrypt values. Use this flag to generate the hash,
-then copy the output into the config. No external tools are needed.
+accept only pre-hashed bcrypt values. The flag prompts for the password
+interactively (without echo), so the password does not appear in the process
+listing or shell history. Copy the printed hash into the config.
 
 ### Basic Usage
 
@@ -297,9 +298,11 @@ sudo ./bin/tobimaru -config /etc/tobimaru/tobimaru.yaml
 # Output: Tobimaru v1.0.0 (commit: abc1234, built: 2026-01-15T10:30:00Z)
 
 # Generate a bcrypt hash for the dashboard admin/user password.
-# Copy the output into auth.admin_password_hash or auth.user_password_hash
+# The flag prompts for the password interactively — nothing is echoed to the
+# terminal, and the password never appears in shell history.
+# Copy the printed hash into auth.admin_password_hash or auth.user_password_hash
 # in the YAML config file.
-./bin/tobimaru -hash-password 'mypassword'
+./bin/tobimaru -hash-password
 ```
 
 ### What Happens on Startup
@@ -345,13 +348,19 @@ remaining hooks are skipped and the process exits.
 ## Web Dashboard
 
 Enable both `api.enabled: true` and `storage.enabled: true`, set
-`auth.admin_password_hash` (use `-hash-password`), and start the daemon:
+`auth.admin_password_hash` (generate with `./bin/tobimaru -hash-password`), and start the daemon:
 
 ```bash
 sudo ./bin/tobimaru -config configs/tobimaru.yaml
 # Dashboard at http://127.0.0.1:8080
 # REST API mounted under /api/
 ```
+
+> **Security note:** The API binds to loopback (`127.0.0.1`) by default. For remote
+> access, always use a reverse proxy (nginx, Caddy) with TLS — never expose the
+> API directly to the network in production. See the
+> [Reverse Proxy Setup Guide](development/reverse-proxy-setup.md) for
+> step-by-step instructions.
 
 The dashboard ships pages for Status, Map (APs and clients), Events, Stats,
 Settings and Login. It is built into `internal/api/web/dist/` and embedded in
@@ -382,7 +391,13 @@ time=2026-01-15T10:30:05.100Z level=ERROR msg="security alert" type=deauth_flood
 ### JSON Format
 
 ```json
-{"time":"2026-01-15T10:30:00.000Z","level":"INFO","msg":"Tobimaru WiFi Watchdog starting","version":"1.0.0","commit":"abc1234"}
+{
+  "time": "2026-01-15T10:30:00.000Z",
+  "level": "INFO",
+  "msg": "Tobimaru WiFi Watchdog starting",
+  "version": "1.0.0",
+  "commit": "abc1234"
+}
 ```
 
 Use JSON format for log aggregation systems (ELK, Loki, etc.):
@@ -409,10 +424,10 @@ troubleshooting but not recommended for production.
 When the detection engine is enabled, security events are emitted with three
 severity levels:
 
-| Severity | Meaning |
-|----------|---------|
-| `info` | Informational — notable activity, no immediate threat |
-| `warning` | Suspicious activity — potential attack in progress |
+| Severity   | Meaning                                                      |
+| ---------- | ------------------------------------------------------------ |
+| `info`     | Informational — notable activity, no immediate threat        |
+| `warning`  | Suspicious activity — potential attack in progress           |
 | `critical` | High-confidence attack detected — immediate attention needed |
 
 Events are deduplicated by `(event_type, source_mac, bssid)` within the
@@ -452,5 +467,5 @@ configured `dedup_window` to prevent alert fatigue.
 ### Auth misconfiguration
 
 - `api.auth.enabled: true` requires `storage.enabled: true` and a non-empty
-  `admin_password_hash`. Generate hashes with
-  `./bin/tobimaru -hash-password 'plaintext'`.
+  `admin_password_hash`. Generate a hash with
+  `./bin/tobimaru -hash-password` (the password is prompted interactively).

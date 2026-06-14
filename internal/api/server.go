@@ -17,6 +17,7 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/capture"
 	"github.com/vkochetkov/tobimaru/internal/config"
 	"github.com/vkochetkov/tobimaru/internal/detector"
+	"github.com/vkochetkov/tobimaru/internal/logging"
 	"github.com/vkochetkov/tobimaru/internal/state"
 	"github.com/vkochetkov/tobimaru/internal/storage"
 )
@@ -33,14 +34,16 @@ type Deps struct {
 	Hub       *Hub
 	StartTime time.Time
 	Logger    *slog.Logger
+	LevelCtrl *logging.LevelControl
 }
 
 // Server wraps the chi router and the standard library http.Server so the
 // orchestrator (cmd/tobimaru) can start, run, and gracefully stop the API.
 type Server struct {
-	cfg    config.APIConfig
-	deps   Deps
-	logger *slog.Logger
+	cfg       config.APIConfig
+	deps      Deps
+	logger    *slog.Logger
+	levelCtrl *logging.LevelControl
 
 	router *chi.Mux
 	httpd  *http.Server
@@ -71,10 +74,14 @@ func NewServer(cfg config.APIConfig, deps Deps) (*Server, error) {
 	if cfg.Auth.Enabled && deps.Repo == nil {
 		return nil, errors.New("api: auth.enabled requires storage.enabled (Deps.Repo is nil)")
 	}
+	if deps.LevelCtrl == nil {
+		return nil, errors.New("api: Deps.LevelCtrl is required")
+	}
 	s := &Server{
 		cfg:          cfg,
 		deps:         deps,
 		logger:       deps.Logger.With("component", "api"),
+		levelCtrl:    deps.LevelCtrl,
 		loginLimiter: newLoginRateLimiter(),
 	}
 	s.detectionEnabled.Store(deps.Config.Detection.Enabled)

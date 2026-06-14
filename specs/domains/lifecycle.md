@@ -15,7 +15,7 @@ Manages the application lifecycle: blocks on OS signals (SIGINT, SIGTERM), then 
 ```go
 type Hook struct {
     Name string
-    Fn   func() error
+    Fn   func(context.Context) error
 }
 
 type Manager struct {
@@ -29,9 +29,10 @@ type Manager struct {
 ```
 
 **Key functions:**
+
 ```go
 func NewManager() *Manager                                    // default signals: SIGINT, SIGTERM
-func (m *Manager) Register(name string, fn func() error)     // thread-safe hook registration
+func (m *Manager) Register(name string, fn func(context.Context) error)     // thread-safe hook registration
 func (m *Manager) WithSignals(signals ...os.Signal) *Manager // builder-pattern signal configuration
 func (m *Manager) WaitForSignal(ctx context.Context) context.Context  // returns ctx canceled on signal
 func (m *Manager) Shutdown(ctx context.Context) error        // runs hooks LIFO with deadline
@@ -47,8 +48,8 @@ shutdown.NewManager()
   └─ returns *Manager
 
 // Components register their cleanup during initialization:
-sm.Register("component_name", func() error {
-    // cleanup logic
+sm.Register("component_name", func(ctx context.Context) error {
+    // cleanup logic, can check ctx.Done() for timeout
     return nil
 })
 ```
@@ -72,8 +73,8 @@ sm.Shutdown(shutdownCtx)  // shutdownCtx has 30-second overall timeout
   │
   └─► For each hook in REVERSE registration order (LIFO) via slices.Backward:
         │
-        ├─► Create per-hook context with 5s timeout: context.WithTimeout(ctx, 5*time.Second)
-        ├─► Launch goroutine: h.Fn()
+        ├─► Create per-hook context with 10s timeout: context.WithTimeout(ctx, 10*time.Second)
+        ├─► Launch goroutine: h.Fn(hookCtx)
         ├─► Wait on select:
         │     ├─ hook returns error → accum in errs, continue to next hook
         │     ├─ hook returns nil     → continue to next hook
@@ -85,7 +86,7 @@ sm.Shutdown(shutdownCtx)  // shutdownCtx has 30-second overall timeout
 ## Invariants
 
 - Hooks always execute in **reverse registration order** (LIFO) via `slices.Backward`: last registered runs first
-- Each hook is given a per-hook sub-context with a 5-second timeout (`context.WithTimeout`), independent of the parent deadline — a slow hook does NOT starve subsequent hooks
+- Each hook is given a per-hook sub-context with a 10-second timeout (`context.WithTimeout`), independent of the parent deadline — a slow hook does NOT starve subsequent hooks
 - If a per-hook timeout expires, the error is accumulated and execution continues to the next hook
 - `Shutdown()` is idempotent via `sync.Once` — subsequent calls return the cached result of the first invocation
 - Errors from hooks are aggregated with `errors.Join` — a failure in one hook does NOT prevent subsequent hooks from running

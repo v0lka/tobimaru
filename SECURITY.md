@@ -4,8 +4,8 @@
 
 Tobimaru is currently in pre-release development (Phases 0–5 complete, Phase 6+ upcoming). No tagged stable releases exist yet.
 
-| Version | Supported          |
-| ------- | ------------------ |
+| Version | Supported                               |
+| ------- | --------------------------------------- |
 | `main`  | :white_check_mark: (development branch) |
 
 Only the latest commit on `main` receives security attention. Once the first stable release is cut, a version-support matrix will be published here.
@@ -37,15 +37,15 @@ Only the latest commit on `main` receives security attention. Once the first sta
 
 ### Assets
 
-| Asset | Sensitivity | Description |
-| --- | --- | --- |
-| Password hashes (`api.auth.admin_password_hash`, `api.auth.user_password_hash`) | Critical | bcrypt hashes in `configs/tobimaru.yaml`; protect the YAML file with filesystem permissions |
-| Session tokens | High | 32-byte CSPRNG tokens stored in HttpOnly cookies; grant admin or read-only user access to the API |
-| SQLite database (`tobimaru.db`) | High | Contains security events, network snapshots, whitelist/blacklist entries, session tokens, and runtime-config key-value store |
-| Network state (AP/client MACs, SSIDs, probe requests) | Medium | In-memory and persisted to SQLite; reveals nearby WiFi devices and their associations |
-| Whitelist/blacklist entries | Medium | Device MAC addresses with comments; stored in SQLite |
-| API/SPA configuration | Medium | Exposes network architecture via GET /api/config and GET /api/status |
-| Embedded React dashboard | Low | Static SPA bundle; no secrets at build time |
+| Asset                                                                           | Sensitivity | Description                                                                                                                  |
+| ------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Password hashes (`api.auth.admin_password_hash`, `api.auth.user_password_hash`) | Critical    | bcrypt hashes in `configs/tobimaru.yaml`; protect the YAML file with filesystem permissions                                  |
+| Session tokens                                                                  | High        | 32-byte CSPRNG tokens stored in HttpOnly cookies; grant admin or read-only user access to the API                            |
+| SQLite database (`tobimaru.db`)                                                 | High        | Contains security events, network snapshots, whitelist/blacklist entries, session tokens, and runtime-config key-value store |
+| Network state (AP/client MACs, SSIDs, probe requests)                           | Medium      | In-memory and persisted to SQLite; reveals nearby WiFi devices and their associations                                        |
+| Whitelist/blacklist entries                                                     | Medium      | Device MAC addresses with comments; stored in SQLite                                                                         |
+| API/SPA configuration                                                           | Medium      | Exposes network architecture via GET /api/config and GET /api/status                                                         |
+| Embedded React dashboard                                                        | Low         | Static SPA bundle; no secrets at build time                                                                                  |
 
 ### Threat Actors
 
@@ -57,24 +57,24 @@ Only the latest commit on `main` receives security attention. Once the first sta
 
 ### Attack Surface
 
-| Entry Point | Auth Required | Notes |
-| --- | --- | --- |
-| `POST /api/login` | No | bcrypt timing safe comparison; Username/password from JSON body (64 KiB cap) |
-| `POST /api/logout` | No | Clears session cookie; best-effort server-side deletion |
-| `GET /api/status` | No | Exposes version, uptime, channel, detection state, subscriber count |
-| `GET /api/aps`, `/api/clients`, `/api/events`, `/api/stats`, `/api/whitelist`, `/api/blacklist`, `/api/config`, `/api/stream` | Yes (admin or user) | Read-only data endpoints |
-| `PUT /api/config` | Yes (admin only) | Runtime config mutation (log_level, detection_enabled, detection_dedup_window); strict key whitelist |
-| `POST /api/whitelist`, `DELETE /api/whitelist/{mac}` | Yes (admin only) | Whitelist mutation |
-| `POST /api/blacklist`, `DELETE /api/blacklist/{mac}` | Yes (admin only) | Blacklist mutation |
-| `GET /api/stream` (SSE) | Yes (any role) | Long-lived SSE connection; auto-closed on auth failure |
-| CLI `-config` flag | Host OS | Path to YAML config file |
-| CLI `-hash-password` flag | Host OS | Outputs bcrypt hash; plaintext password visible in process list |
-| YAML config file | Host FS | Contains bcrypt password hashes, listen address, SQLite path |
-| SQLite database file | Host FS | Permissions set to `0600` at creation; contains all persisted data |
-| pcap capture interface | Host OS (root) | Requires `sudo`; raw 802.11 frame capture |
-| `exec.Command` (airport/iw/ip) | Host OS (root) | System utilities for monitor mode and channel switching; all arguments are hardcoded strings, never user-supplied |
-| CI/CD (GitHub Actions) | GitHub | Push/PR on `main`; builds, tests, lint |
-| `go.sum` + `package-lock.json` | Dev environment | Dependency integrity via hash verification |
+| Entry Point                                                                                                                   | Auth Required       | Notes                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `POST /api/login`                                                                                                             | No                  | bcrypt timing safe comparison; Username/password from JSON body (64 KiB cap)                                      |
+| `POST /api/logout`                                                                                                            | No                  | Clears session cookie; best-effort server-side deletion                                                           |
+| `GET /api/status`                                                                                                             | No                  | Exposes version, uptime, channel, detection state, subscriber count                                               |
+| `GET /api/aps`, `/api/clients`, `/api/events`, `/api/stats`, `/api/whitelist`, `/api/blacklist`, `/api/config`, `/api/stream` | Yes (admin or user) | Read-only data endpoints                                                                                          |
+| `PUT /api/config`                                                                                                             | Yes (admin only)    | Runtime config mutation (log_level, detection_enabled, detection_dedup_window); strict key whitelist              |
+| `POST /api/whitelist`, `DELETE /api/whitelist/{mac}`                                                                          | Yes (admin only)    | Whitelist mutation                                                                                                |
+| `POST /api/blacklist`, `DELETE /api/blacklist/{mac}`                                                                          | Yes (admin only)    | Blacklist mutation                                                                                                |
+| `GET /api/stream` (SSE)                                                                                                       | Yes (any role)      | Long-lived SSE connection; auto-closed on auth failure                                                            |
+| CLI `-config` flag                                                                                                            | Host OS             | Path to YAML config file                                                                                          |
+| CLI `-hash-password` flag                                                                                                     | Host OS             | Prompts interactively for a password (no echo); outputs bcrypt hash; password never visible in process list       |
+| YAML config file                                                                                                              | Host FS             | Contains bcrypt password hashes, listen address, SQLite path                                                      |
+| SQLite database file                                                                                                          | Host FS             | Permissions set to `0600` at creation; contains all persisted data                                                |
+| pcap capture interface                                                                                                        | Host OS (root)      | Requires `sudo`; raw 802.11 frame capture                                                                         |
+| `exec.Command` (airport/iw/ip)                                                                                                | Host OS (root)      | System utilities for monitor mode and channel switching; all arguments are hardcoded strings, never user-supplied |
+| CI/CD (GitHub Actions)                                                                                                        | GitHub              | Push/PR on `main`; builds, tests, lint                                                                            |
+| `go.sum` + `package-lock.json`                                                                                                | Dev environment     | Dependency integrity via hash verification                                                                        |
 
 ### Trust Boundaries
 
@@ -112,16 +112,16 @@ Only the latest commit on `main` receives security attention. Once the first sta
 
 ### Known Risks & Accepted Trade-offs
 
-| Risk | Severity | Mitigation / Rationale |
-| --- | --- | --- |
-| Login rate limiting is in-memory only (not persisted across restarts) | Low | Per-IP sliding-window rate limiter: 5 failures per 15 minutes triggers 15-minute lockout. Reset on successful login. Restarting the daemon clears the in-memory state. Adequate for localhost deployments; a persistent rate limiter should be added before enabling remote access. |
-| No TLS termination | Medium | Default bind is `127.0.0.1:8080`. Remote access requires a reverse proxy (nginx, Caddy) providing TLS. Documented in config comments. |
-| Runs as root | High | Inherent requirement for raw pcap capture and monitor mode. Mitigated by minimal attack surface (single binary, no child processes beyond airport/iw/ip). Future: consider capabilities-based privilege separation. |
-| `-hash-password` exposes plaintext in process list | Low | Utility flag; plaintext password is transient (appears only during hash generation). Callers should clear shell history after use. |
-| CLI argument `-config` accepts arbitrary file paths | Low | Standard Go flag; the process already runs as root so this does not expand the trust boundary. |
-| No Content Security Policy header on SPA | Low | SPA is same-origin, no third-party scripts. Will add CSP when SPA complexity grows. |
-| `modernc.org/sqlite` is a third-party SQLite implementation | Low | Pure-Go (CGO-free), actively maintained, no known CVEs. Preferred over cgo-based sqlite3 for auditability. |
-| `gopacket` has known quirks with some 802.11 frame types | Low | Upstream library limitation; no security impact on detection logic since frames are read-only and validated. |
+| Risk                                                                  | Severity      | Mitigation / Rationale                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Login rate limiting is in-memory only (not persisted across restarts) | Low           | Per-IP sliding-window rate limiter: 5 failures per 15 minutes triggers 15-minute lockout. Reset on successful login. Restarting the daemon clears the in-memory state. Adequate for localhost deployments; a persistent rate limiter should be added before enabling remote access. |
+| No TLS termination                                                    | Medium        | Default bind is `127.0.0.1:8080`. Remote access requires a reverse proxy (nginx, Caddy) providing TLS. Documented in config comments.                                                                                                                                               |
+| Runs as root                                                          | High          | Inherent requirement for raw pcap capture and monitor mode. Mitigated by minimal attack surface (single binary, no child processes beyond airport/iw/ip). Future: consider capabilities-based privilege separation.                                                                 |
+| `-hash-password` exposes plaintext in process list                    | ~~Low~~ Fixed | ~~Utility flag; plaintext password is transient (appears only during hash generation). Callers should clear shell history after use.~~ Now uses interactive terminal prompt via `golang.org/x/term` — password never appears in the process list or shell history.                  |
+| CLI argument `-config` accepts arbitrary file paths                   | Low           | Standard Go flag; the process already runs as root so this does not expand the trust boundary.                                                                                                                                                                                      |
+| No Content Security Policy header on SPA                              | Low           | SPA is same-origin, no third-party scripts. Will add CSP when SPA complexity grows.                                                                                                                                                                                                 |
+| `modernc.org/sqlite` is a third-party SQLite implementation           | Low           | Pure-Go (CGO-free), actively maintained, no known CVEs. Preferred over cgo-based sqlite3 for auditability.                                                                                                                                                                          |
+| `gopacket` has known quirks with some 802.11 frame types              | Low           | Upstream library limitation; no security impact on detection logic since frames are read-only and validated.                                                                                                                                                                        |
 
 ---
 
@@ -182,7 +182,7 @@ These guidelines apply to ALL contributors: human developers, code reviewers, an
 - All API input is validated via JSON strict-parsing in [`readJSON()`](internal/api/errors.go#L72-L88): `DisallowUnknownFields()`, `MaxBytesReader(64 KiB)`, single-JSON-value enforcement.
 - YAML config uses `KnownFields(true)` — unknown keys cause fatal error at startup.
 - `PUT /api/config` uses a strict key whitelist (`mutableKeys`) and rejects unknown fields with a dedicated `unsupported_field` error type.
-- CLI arguments are minimal: `-config` (file path), `-version` (bool), `-hash-password` (plaintext).
+- CLI arguments are minimal: `-config` (file path), `-version` (bool), `-hash-password` (bool — triggers interactive password prompt, no password in argv).
 - pcap frame parsing uses gopacket's built-in 802.11 decoding — no custom binary parsing of untrusted data.
 - MAC addresses are validated via `net.ParseMAC` before storage or comparison.
 
@@ -239,7 +239,7 @@ These guidelines apply to ALL contributors: human developers, code reviewers, an
 - Password hashes are the only secrets in the config file. The file should be `chmod 600`.
 - `GET /api/config` redacts password hashes to `"***"`.
 - `PUT /api/config` only mutates non-sensitive runtime settings (`log_level`, `detection_enabled`, `detection_dedup_window`).
-- The `-hash-password` CLI flag prints the bcrypt hash to stdout — callers should clear shell history after use.
+- The `-hash-password` CLI flag prompts for the password interactively (no echo) and prints the bcrypt hash to stdout — the password never appears in the process list or shell history.
 - No `.env` files are used. Configuration is YAML-only.
 
 ---
@@ -292,20 +292,20 @@ The following actions are **FORBIDDEN** for any AI agent:
 
 ## Security-Related Configuration Files
 
-| File | Purpose |
-| --- | --- |
-| `configs/tobimaru.yaml` | Application configuration including bcrypt password hashes, API listen address, and auth settings |
-| `.golangci.yml` | golangci-lint configuration with gosec security checks enabled |
-| `.github/workflows/ci.yml` | CI pipeline: tests with `-race`, lint, build, smoke test |
-| `go.sum` | Go module dependency hash verification |
-| `web/package-lock.json` | Node.js dependency hash verification |
-| `.gitignore` | Prevents committing build artifacts, IDE files, and the database file |
+| File                       | Purpose                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `configs/tobimaru.yaml`    | Application configuration including bcrypt password hashes, API listen address, and auth settings |
+| `.golangci.yml`            | golangci-lint configuration with gosec security checks enabled                                    |
+| `.github/workflows/ci.yml` | CI pipeline: tests with `-race`, lint, build, smoke test                                          |
+| `go.sum`                   | Go module dependency hash verification                                                            |
+| `web/package-lock.json`    | Node.js dependency hash verification                                                              |
+| `.gitignore`               | Prevents committing build artifacts, IDE files, and the database file                             |
 
 ---
 
 ## Revision History
 
-| Date | Author | Change |
-| --- | --- | --- |
+| Date       | Author      | Change                                                                                                                                                 |
+| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 2026-06-11 | @vkochetkov | Updated: login rate limiter (in-memory, per-IP), CookieSecure configurability, dependency counts (SPA: 6 runtime + 11 dev, Go: 5 direct + 10 indirect) |
-| 2026-06-06 | @vkochetkov | Initial security policy based on codebase audit of Phases 0–5 |
+| 2026-06-06 | @vkochetkov | Initial security policy based on codebase audit of Phases 0–5                                                                                          |

@@ -93,17 +93,18 @@ Tobimaru uses a YAML configuration file. See [`configs/tobimaru.yaml`](configs/t
 
 ### Command-Line Flags
 
-| Flag                         | Description                                                        |
-| ---------------------------- | ------------------------------------------------------------------ |
-| `-config <path>`             | Path to YAML configuration file (default: `configs/tobimaru.yaml`) |
-| `-version`                   | Print version information and exit                                 |
-| `-hash-password <plaintext>` | Print bcrypt hash for the given password and exit                  |
+| Flag             | Description                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| `-config <path>` | Path to YAML configuration file (default: `configs/tobimaru.yaml`)                 |
+| `-version`       | Print version information and exit                                                 |
+| `-hash-password` | Prompt for a password interactively (no echo) and print its bcrypt hash, then exit |
 
 The `-hash-password` flag is a built-in utility to generate bcrypt hashes for
 the YAML configuration. Passwords are never stored in plaintext — the config
 accepts only pre-hashed values in `auth.admin_password_hash` and
-`auth.user_password_hash`. This flag lets the operator generate those hashes
-directly from the binary, without external tools like `htpasswd`.
+`auth.user_password_hash`. The flag prompts for the password interactively
+using the terminal, so the password does not appear in the process listing
+or shell history. No external tools like `htpasswd` are needed.
 
 ### Configuration Sections
 
@@ -167,19 +168,19 @@ directly from the binary, without external tools like `htpasswd`.
 
 #### `api` — REST API & Dashboard
 
-| Field                      | Type     | Default          | Description                                  |
-| -------------------------- | -------- | ---------------- | -------------------------------------------- |
-| `enabled`                  | bool     | `false`          | Enable HTTP server with embedded dashboard   |
-| `listen`                   | string   | `127.0.0.1:8080` | Bind address (loopback by default)           |
-| `read_timeout`             | duration | `15s`            | HTTP read timeout                            |
-| `write_timeout`            | duration | `30s`            | HTTP write timeout (SSE overrides this)      |
-| `idle_timeout`             | duration | `60s`            | HTTP idle timeout                            |
-| `shutdown_timeout`         | duration | `5s`             | Graceful shutdown deadline                   |
-| `cors.allowed_origins`     | []string | `[]`             | CORS origins (empty = same-origin only)      |
-| `auth.enabled`             | bool     | `true`           | Enable session-based authentication          |
-| `auth.session_ttl`         | duration | `24h`            | Session lifetime                             |
-| `auth.admin_password_hash` | string   | —                | bcrypt hash (generate with `-hash-password`) |
-| `auth.user_password_hash`  | string   | —                | Optional read-only account                   |
+| Field                      | Type     | Default          | Description                                                 |
+| -------------------------- | -------- | ---------------- | ----------------------------------------------------------- |
+| `enabled`                  | bool     | `false`          | Enable HTTP server with embedded dashboard                  |
+| `listen`                   | string   | `127.0.0.1:8080` | Bind address (loopback by default)                          |
+| `read_timeout`             | duration | `15s`            | HTTP read timeout                                           |
+| `write_timeout`            | duration | `30s`            | HTTP write timeout (SSE overrides this)                     |
+| `idle_timeout`             | duration | `60s`            | HTTP idle timeout                                           |
+| `shutdown_timeout`         | duration | `5s`             | Graceful shutdown deadline                                  |
+| `cors.allowed_origins`     | []string | `[]`             | CORS origins (empty = same-origin only)                     |
+| `auth.enabled`             | bool     | `true`           | Enable session-based authentication                         |
+| `auth.session_ttl`         | duration | `24h`            | Session lifetime                                            |
+| `auth.admin_password_hash` | string   | —                | bcrypt hash (generate with `./bin/tobimaru -hash-password`) |
+| `auth.user_password_hash`  | string   | —                | Optional read-only account                                  |
 
 ### Running with the API and Dashboard
 
@@ -187,8 +188,8 @@ To enable the REST API and embedded web dashboard:
 
 ```bash
 # 1. Generate bcrypt password hashes (copy the output into the config file)
-./bin/tobimaru -hash-password "admin123"
-./bin/tobimaru -hash-password "user123"
+./bin/tobimaru -hash-password   # prompts for admin password interactively
+./bin/tobimaru -hash-password   # prompts for user password interactively
 
 # 2. Paste the hashes into tobimaru.yaml under auth.admin_password_hash / auth.user_password_hash:
 #    api:
@@ -207,7 +208,7 @@ sudo ./bin/tobimaru -config tobimaru.yaml
 
 Open `http://127.0.0.1:8080` in a browser. The dashboard serves the SPA and the REST API is mounted under `/api/`.
 
-> **Security note:** The API binds to loopback (`127.0.0.1`) by default. For remote access, use a reverse proxy (nginx, Caddy) with TLS.
+> **Security note:** The API binds to loopback (`127.0.0.1`) by default. For remote access, use a reverse proxy (nginx, Caddy) with TLS — see the [Reverse Proxy Setup Guide](docs/development/reverse-proxy-setup.md) for step-by-step instructions.
 
 ### API Endpoints
 

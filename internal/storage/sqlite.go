@@ -50,6 +50,9 @@ func Open(cfg config.StorageConfig) (*SQLiteRepository, error) {
 		return nil, fmt.Errorf("storage: failed to open database %q: %w", cfg.Path, err)
 	}
 
+	// Set connection pool limits for SQLite (single writer).
+	db.SetMaxOpenConns(1)
+
 	ctx, cancel := context.WithTimeout(context.Background(), migrationTimeout)
 	defer cancel()
 
@@ -73,9 +76,6 @@ func Open(cfg config.StorageConfig) (*SQLiteRepository, error) {
 			return nil, fmt.Errorf("storage: failed to set file permissions: %w", err)
 		}
 	}
-
-	// Set connection pool limits for SQLite (single writer).
-	db.SetMaxOpenConns(1)
 
 	return &SQLiteRepository{db: db, cfg: cfg}, nil
 }

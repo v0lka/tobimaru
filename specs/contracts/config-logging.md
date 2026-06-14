@@ -6,10 +6,12 @@
 
 ## Interfaces
 
-| Interface | Package | Consumed By | Purpose |
-|-----------|---------|-------------|---------|
-| `config.LogConfig` (struct) | `internal/config` | `internal/logging` | Log level and format configuration |
-| `logging.New(cfg config.LogConfig) *slog.Logger` | `internal/logging` | `cmd/tobimaru` | Logger factory |
+| Interface                                                         | Package            | Consumed By                    | Purpose                            |
+| ----------------------------------------------------------------- | ------------------ | ------------------------------ | ---------------------------------- |
+| `config.LogConfig` (struct)                                       | `internal/config`  | `internal/logging`             | Log level and format configuration |
+| `logging.New(cfg config.LogConfig) (*slog.Logger, *LevelControl)` | `internal/logging` | `cmd/tobimaru`                 | Logger factory + level control     |
+| `logging.NewLevelControl(level string) *LevelControl`             | `internal/logging` | `internal/api`                 | Standalone LevelControl for wiring |
+| `logging.LevelControl` (struct)                                   | `internal/logging` | `cmd/tobimaru`, `internal/api` | Runtime log level management       |
 
 ## Initialization
 
@@ -18,11 +20,19 @@ In `cmd/tobimaru/main.go`:
 ```go
 cfg, err := config.Load(*flagConfig)       // Step 1: load config
 // ... error handling ...
-logger := logging.New(cfg.Log)             // Step 2: create logger from LogConfig subset
+logger, levelCtrl := logging.New(cfg.Log)   // Step 2: create logger + LevelControl
 slog.SetDefault(logger)                    // Step 3: set as default logger
 ```
 
 The `cfg.Log` field is extracted from the full `*config.Config` and passed directly to `logging.New()`. The logging package receives only `LogConfig`, not the entire `Config` — it knows nothing about `MonitorConfig` or any future config sections.
+
+## LevelControl and slog.Default Contract
+
+`LevelControl.Set()` mutates the `slog.LevelVar` shared with the logger produced by `logging.New()`. After `slog.SetDefault(logger)`, runtime calls to `LevelControl.Set()` affect the default logger as well — the default logger and the `LevelControl`-managed logger share the same `*slog.LevelVar`.
+
+**Invariant:** `slog.SetDefault` must NOT be called again after initialization with a logger not created from the same `LevelControl`'s internal `LevelVar`. Doing so silently decouples the default logger from the runtime level control, causing `PUT /api/config` log-level changes to affect only the originally-created logger, not the new default.
+
+Callers that need a `LevelControl` without creating a full logger (e.g., tests) should use `logging.NewLevelControl(level)`, which returns a standalone `*LevelControl` initialized at the given level string.
 
 ## Data Flow Across Boundary
 
@@ -36,7 +46,7 @@ logging.New(LogConfig)
     │  parseLevel → slog.Level
     │  format → JSONHandler or TextHandler
     ▼
-*slog.Logger
+*slog.Logger, *LevelControl
 ```
 
 Direction: `internal/config` → `internal/logging` (one-way). The full `Config` does NOT cross the boundary — only the `LogConfig` subset.
@@ -48,6 +58,7 @@ Direction: `internal/config` → `internal/logging` (one-way). The full `Config`
 ## Breaking Change Checklist
 
 If you change `LogConfig`:
+
 - [ ] Update `config.LogConfig` struct definition
 - [ ] Update `logging.New()` to handle new fields
 - [ ] Update `configs/tobimaru.yaml` sample with new fields

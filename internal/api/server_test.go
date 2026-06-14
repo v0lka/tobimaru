@@ -17,6 +17,7 @@ import (
 
 	"github.com/vkochetkov/tobimaru/internal/config"
 	"github.com/vkochetkov/tobimaru/internal/detector"
+	"github.com/vkochetkov/tobimaru/internal/logging"
 	"github.com/vkochetkov/tobimaru/internal/state"
 	"github.com/vkochetkov/tobimaru/internal/storage"
 )
@@ -62,6 +63,7 @@ func testServer(t *testing.T, authEnabled bool, adminPassword string) (*Server, 
 	}
 
 	logger := discardLogger()
+	levelCtrl := logging.NewLevelControl("info")
 	hub := NewHub(logger)
 	srv, err := NewServer(apiCfg, Deps{
 		Config:    cfg,
@@ -70,6 +72,7 @@ func testServer(t *testing.T, authEnabled bool, adminPassword string) (*Server, 
 		Hub:       hub,
 		StartTime: time.Now(),
 		Logger:    logger,
+		LevelCtrl: levelCtrl,
 	})
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
@@ -199,6 +202,7 @@ func TestAdminOnlyRoutes_RejectUser(t *testing.T) {
 	hub := NewHub(logger)
 	srv, err := NewServer(apiCfg, Deps{
 		Config: cfg, State: stateEng, Repo: repo, Hub: hub, StartTime: time.Now(), Logger: logger,
+		LevelCtrl: logging.NewLevelControl("info"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -948,6 +952,7 @@ func testServerOnEphemeralPort(t *testing.T) *Server {
 	}
 	srv, err := NewServer(apiCfg, Deps{
 		Config: cfg, State: stateEng, Repo: repo, Hub: hub, StartTime: time.Now(), Logger: logger,
+		LevelCtrl: logging.NewLevelControl("info"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1046,6 +1051,7 @@ func TestCorsMiddleware_AllowedOrigin(t *testing.T) {
 	}
 	srv, err := NewServer(apiCfg, Deps{
 		Config: cfg, State: stateEng, Repo: repo, Hub: hub, StartTime: time.Now(), Logger: logger,
+		LevelCtrl: logging.NewLevelControl("info"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1495,6 +1501,7 @@ func TestHandleEvents_WithoutRepo(t *testing.T) {
 	cfg := &config.Config{API: apiCfg, State: config.StateConfig{Enabled: true, TTL: time.Hour, SweepInterval: time.Minute}}
 	srv, err := NewServer(apiCfg, Deps{
 		Config: cfg, State: stateEng, Hub: hub, StartTime: time.Now(), Logger: logger,
+		LevelCtrl: logging.NewLevelControl("info"),
 	})
 	if err != nil {
 		t.Fatal(err)

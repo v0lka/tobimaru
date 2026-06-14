@@ -10,7 +10,7 @@ import (
 
 func TestNewTextFormat(t *testing.T) {
 	cfg := config.LogConfig{Level: "debug", Format: "text"}
-	logger := New(cfg)
+	logger, _ := New(cfg)
 	if logger == nil {
 		t.Fatal("New() returned nil")
 	}
@@ -30,7 +30,7 @@ func TestNewTextFormat(t *testing.T) {
 
 func TestNewJSONFormat(t *testing.T) {
 	cfg := config.LogConfig{Level: "debug", Format: "json"}
-	logger := New(cfg)
+	logger, _ := New(cfg)
 	if logger == nil {
 		t.Fatal("New() returned nil")
 	}
@@ -75,33 +75,62 @@ func TestParseLevelUnknown(t *testing.T) {
 	}
 }
 
+func TestNewLevelControl(t *testing.T) {
+	tests := []struct {
+		level string
+		want  string
+	}{
+		{config.LogLevelDebug, config.LogLevelDebug},
+		{config.LogLevelInfo, config.LogLevelInfo},
+		{config.LogLevelWarn, config.LogLevelWarn},
+		{config.LogLevelError, config.LogLevelError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			lc := NewLevelControl(tt.level)
+			if got := lc.Level(); got != tt.want {
+				t.Errorf("Level() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewLevelControl_Unknown(t *testing.T) {
+	lc := NewLevelControl("fatal")
+	if got := lc.Level(); got != config.LogLevelInfo {
+		t.Errorf("Level() = %q, want %q (fallback to info)", got, config.LogLevelInfo)
+	}
+}
+
 func TestSetLevel_AllLevels(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  slog.Level
+		want  string
 	}{
-		{"debug", config.LogLevelDebug, slog.LevelDebug},
-		{"info", config.LogLevelInfo, slog.LevelInfo},
-		{"warn", config.LogLevelWarn, slog.LevelWarn},
-		{"error", config.LogLevelError, slog.LevelError},
+		{"debug", config.LogLevelDebug, config.LogLevelDebug},
+		{"info", config.LogLevelInfo, config.LogLevelInfo},
+		{"warn", config.LogLevelWarn, config.LogLevelWarn},
+		{"error", config.LogLevelError, config.LogLevelError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ok := SetLevel(tt.input)
+			lc := NewLevelControl("info")
+			ok := lc.Set(tt.input)
 			if !ok {
-				t.Error("SetLevel returned false for valid level")
+				t.Error("Set returned false for valid level")
 			}
-			if got := levelVar.Level(); got != tt.want {
-				t.Errorf("levelVar.Level() = %v, want %v", got, tt.want)
+			if got := lc.Level(); got != tt.want {
+				t.Errorf("Level() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestSetLevel_Unknown(t *testing.T) {
-	if SetLevel("verbose") {
-		t.Error("SetLevel should return false for unknown level")
+	lc := NewLevelControl("info")
+	if lc.Set("verbose") {
+		t.Error("Set should return false for unknown level")
 	}
 }
 
@@ -117,8 +146,9 @@ func TestLevel_ReturnsString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.set, func(t *testing.T) {
-			SetLevel(tt.set)
-			if got := Level(); got != tt.want {
+			lc := NewLevelControl("info")
+			lc.Set(tt.set)
+			if got := lc.Level(); got != tt.want {
 				t.Errorf("Level() = %q, want %q", got, tt.want)
 			}
 		})

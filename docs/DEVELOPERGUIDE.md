@@ -95,23 +95,23 @@ TypeScript and other Node dependencies.
 
 ## Make Targets
 
-| Target | Description |
-|--------|-------------|
-| `make all` | Restore all deps (Go + npm), build web, then build binary |
-| `make build` | Build for current platform → `bin/tobimaru` (embeds `web/dist`) |
-| `make build-all` | Cross-compile for `linux/amd64`, `linux/arm64`, `darwin/arm64` |
-| `make test` | Run tests with race detector and coverage |
-| `make test-cover` | Run tests and open the coverage report |
-| `make lint` | Run `golangci-lint run ./...` |
-| `make run` | `go run` with ldflags |
-| `make clean` | Remove `bin/` and `coverage.out` (keeps committed `web/dist`) |
-| `make fmt` | `go fmt ./...` |
-| `make tidy` | `go mod tidy` |
-| `make web-deps` | `npm ci` inside `web/` |
-| `make web` | Build the SPA into `internal/api/web/dist/` |
-| `make web-clean` | Remove the embedded SPA bundle |
-| `make lint-web` | Run ESLint on the SPA sources |
-| `make help` | List all targets |
+| Target            | Description                                                     |
+| ----------------- | --------------------------------------------------------------- |
+| `make all`        | Restore all deps (Go + npm), build web, then build binary       |
+| `make build`      | Build for current platform → `bin/tobimaru` (embeds `web/dist`) |
+| `make build-all`  | Cross-compile for `linux/amd64`, `linux/arm64`, `darwin/arm64`  |
+| `make test`       | Run tests with race detector and coverage                       |
+| `make test-cover` | Run tests and open the coverage report                          |
+| `make lint`       | Run `golangci-lint run ./...`                                   |
+| `make run`        | `go run` with ldflags                                           |
+| `make clean`      | Remove `bin/` and `coverage.out` (keeps committed `web/dist`)   |
+| `make fmt`        | `go fmt ./...`                                                  |
+| `make tidy`       | `go mod tidy`                                                   |
+| `make web-deps`   | `npm ci` inside `web/`                                          |
+| `make web`        | Build the SPA into `internal/api/web/dist/`                     |
+| `make web-clean`  | Remove the embedded SPA bundle                                  |
+| `make lint-web`   | Run ESLint on the SPA sources                                   |
+| `make help`       | List all targets                                                |
 
 ## Build System
 
@@ -188,10 +188,12 @@ All jobs must pass before merge.
 ### Startup Sequence
 
 1. Parse CLI flags (`-config`, `-version`, `-hash-password`).
-   The `-hash-password` flag is a standalone utility: it generates a bcrypt
-   hash, prints it to stdout, and exits immediately — the daemon never
-   starts. This is how operators produce the `admin_password_hash`/
-   `user_password_hash` values for the YAML config.
+   The `-hash-password` flag is a standalone utility: it prompts for a
+   password interactively, generates a bcrypt hash, prints it to stdout,
+   and exits immediately — the daemon never starts. The password is read
+   via the terminal (without echo) so it never appears in the process
+   listing or shell history. This is how operators produce the
+   `admin_password_hash`/`user_password_hash` values for the YAML config.
 2. Load and validate YAML configuration.
 3. Initialize structured logger.
 4. Open SQLite storage (when `storage.enabled`).
@@ -343,12 +345,12 @@ Before making structural changes, consult the specification system:
 
 ### Spec Types
 
-| Type | Location | Purpose |
-|------|----------|---------|
-| Domain specs | `specs/domains/` | Conceptual domain definitions |
-| Contract specs | `specs/contracts/` | Cross-boundary interfaces |
+| Type               | Location              | Purpose                         |
+| ------------------ | --------------------- | ------------------------------- |
+| Domain specs       | `specs/domains/`      | Conceptual domain definitions   |
+| Contract specs     | `specs/contracts/`    | Cross-boundary interfaces       |
 | Architecture specs | `specs/architecture/` | System-level rules (import DAG) |
-| ADRs | `specs/decisions/` | Architecture Decision Records |
+| ADRs               | `specs/decisions/`    | Architecture Decision Records   |
 
 When adding new packages or changing interfaces, update the relevant specs.
 
@@ -392,28 +394,28 @@ When creating a new `internal/` package:
 
 The project follows a phased development plan:
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 0 | Complete | Foundation (config, logging, shutdown, version, CI) |
-| 1 | Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing) |
-| 2 | Complete | Detection Engine (rule interface, engine, five concrete rules, pcap integration tests) |
-| 3 | Complete | Network State & Storage (AP/client tracking, whitelist/blacklist, SQLite persistence) |
-| 4 | Complete | REST API & Dashboard (chi, SSE, React 19 SPA, auth) |
-| 5 | Complete | Cross-platform (macOS via airport-free CoreWLAN bridge + BPF) |
-| 6+ | Planned | EAPOL, active countermeasures, internal monitoring, behavioural analytics, OpenWrt, advanced detection, additional integrations |
+| Phase | Status   | Description                                                                                                                     |
+| ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Complete | Foundation (config, logging, shutdown, version, CI)                                                                             |
+| 1     | Complete | Capture Engine (monitor mode, pcap, channel hopping, parsing)                                                                   |
+| 2     | Complete | Detection Engine (rule interface, engine, five concrete rules, pcap integration tests)                                          |
+| 3     | Complete | Network State & Storage (AP/client tracking, whitelist/blacklist, SQLite persistence)                                           |
+| 4     | Complete | REST API & Dashboard (chi, SSE, React 19 SPA, auth)                                                                             |
+| 5     | Complete | Cross-platform (macOS via airport-free CoreWLAN bridge + BPF)                                                                   |
+| 6+    | Planned  | EAPOL, active countermeasures, internal monitoring, behavioural analytics, OpenWrt, advanced detection, additional integrations |
 
 See [`docs/development/wifi-watchdog-roadmap.md`](development/wifi-watchdog-roadmap.md)
 for full task breakdowns.
 
 ## External Dependencies
 
-| Module | Purpose |
-|--------|---------|
-| `gopkg.in/yaml.v3` | YAML configuration parsing (strict, `KnownFields`) |
-| `github.com/gopacket/gopacket` | pcap capture and 802.11 frame decoding |
-| `github.com/go-chi/chi/v5` | HTTP router for the REST API |
-| `golang.org/x/crypto` | bcrypt password hashing |
-| `modernc.org/sqlite` | Pure-Go SQLite driver (CGO-free) |
+| Module                         | Purpose                                            |
+| ------------------------------ | -------------------------------------------------- |
+| `gopkg.in/yaml.v3`             | YAML configuration parsing (strict, `KnownFields`) |
+| `github.com/gopacket/gopacket` | pcap capture and 802.11 frame decoding             |
+| `github.com/go-chi/chi/v5`     | HTTP router for the REST API                       |
+| `golang.org/x/crypto`          | bcrypt password hashing                            |
+| `modernc.org/sqlite`           | Pure-Go SQLite driver (CGO-free)                   |
 
 Dependencies are minimal by design. New dependencies should be justified and
 discussed in an ADR.

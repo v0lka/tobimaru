@@ -8,19 +8,23 @@ import (
 	"github.com/vkochetkov/tobimaru/internal/config"
 )
 
-// levelVar is the package-level atomic slog.LevelVar that backs every logger
-// created by New. Components that allow runtime log-level changes (e.g. the
-// HTTP API's PUT /api/config endpoint) call SetLevel to adjust verbosity
-// without recreating the logger.
-var levelVar = new(slog.LevelVar)
+// LevelControl manages runtime log-level changes for a logger created by
+// New. Each LevelControl owns a single slog.LevelVar; calling Set changes
+// the level of every handler that shares the same LevelVar, without
+// recreating the logger.
+type LevelControl struct {
+	lv *slog.LevelVar
+}
 
 // New creates a new slog.Logger based on the provided logging configuration.
 // It maps log level and format strings to the corresponding slog settings,
-// and writes output to stdout. The returned logger shares the package-level
-// LevelVar, so subsequent calls to SetLevel affect all loggers built here.
-func New(cfg config.LogConfig) *slog.Logger {
-	levelVar.Set(parseLevel(cfg.Level))
-	opts := &slog.HandlerOptions{Level: levelVar}
+// and writes output to stdout. The returned LevelControl allows runtime
+// level changes via its Set method — each logger gets its own LevelControl,
+// so independent loggers do not interfere with each other.
+func New(cfg config.LogConfig) (*slog.Logger, *LevelControl) {
+	lc := &LevelControl{lv: new(slog.LevelVar)}
+	lc.lv.Set(parseLevel(cfg.Level))
+	opts := &slog.HandlerOptions{Level: lc.lv}
 
 	var handler slog.Handler
 	if cfg.Format == config.LogFormatJSON {
@@ -29,22 +33,32 @@ func New(cfg config.LogConfig) *slog.Logger {
 		handler = slog.NewTextHandler(os.Stdout, opts)
 	}
 
-	return slog.New(handler)
+	return slog.New(handler), lc
 }
 
-// SetLevel updates the runtime log level used by all loggers created via New.
-// It accepts the same string values as the YAML config (debug, info, warn,
-// error). Unknown values are ignored.
-func SetLevel(s string) bool {
+// NewLevelControl creates a LevelControl initialized to the given level.
+// It is useful when callers need a LevelControl without creating a full
+// logger (e.g. in tests or when wiring dependencies before the logger
+// is constructed).
+func NewLevelControl(level string) *LevelControl {
+	lc := &LevelControl{lv: new(slog.LevelVar)}
+	lc.lv.Set(parseLevel(level))
+	return lc
+}
+
+// Set updates the runtime log level. It accepts the same string values as
+// the YAML config (debug, info, warn, error). Unknown values are ignored;
+// the return value reports whether the level was recognized.
+func (lc *LevelControl) Set(s string) bool {
 	switch s {
 	case config.LogLevelDebug:
-		levelVar.Set(slog.LevelDebug)
+		lc.lv.Set(slog.LevelDebug)
 	case config.LogLevelInfo:
-		levelVar.Set(slog.LevelInfo)
+		lc.lv.Set(slog.LevelInfo)
 	case config.LogLevelWarn:
-		levelVar.Set(slog.LevelWarn)
+		lc.lv.Set(slog.LevelWarn)
 	case config.LogLevelError:
-		levelVar.Set(slog.LevelError)
+		lc.lv.Set(slog.LevelError)
 	default:
 		return false
 	}
@@ -52,8 +66,8 @@ func SetLevel(s string) bool {
 }
 
 // Level returns the current effective log level as a string.
-func Level() string {
-	switch levelVar.Level() {
+func (lc *LevelControl) Level() string {
+	switch lc.lv.Level() {
 	case slog.LevelDebug:
 		return config.LogLevelDebug
 	case slog.LevelWarn:

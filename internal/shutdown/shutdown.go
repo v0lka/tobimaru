@@ -14,9 +14,11 @@ import (
 )
 
 // Hook represents a cleanup function to be executed during shutdown.
+// The function receives a per-hook context that is canceled when the
+// hook's time budget expires, allowing the hook to abort early.
 type Hook struct {
 	Name string
-	Fn   func() error
+	Fn   func(context.Context) error
 }
 
 // Manager coordinates graceful shutdown by waiting for OS signals
@@ -39,8 +41,9 @@ func NewManager() *Manager {
 
 // Register adds a cleanup hook. Hooks are executed in reverse registration
 // order during shutdown (LIFO), so that resources created later are cleaned
-// up first.
-func (m *Manager) Register(name string, fn func() error) {
+// up first. The hook function receives a context that is canceled when its
+// per-hook time budget (10s) expires.
+func (m *Manager) Register(name string, fn func(context.Context) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.hooks = append(m.hooks, Hook{Name: name, Fn: fn})
@@ -93,10 +96,10 @@ func (m *Manager) doShutdown(ctx context.Context) error {
 	// Execute hooks in reverse order (LIFO). A per-hook sub-context with
 	// a generous budget ensures one slow hook doesn't starve the rest.
 	for _, hook := range slices.Backward(hooks) {
-		hookCtx, hookCancel := context.WithTimeout(ctx, 5*time.Second)
+		hookCtx, hookCancel := context.WithTimeout(ctx, 10*time.Second)
 		done := make(chan error, 1)
 		go func(h Hook) {
-			done <- h.Fn()
+			done <- h.Fn(hookCtx)
 		}(hook)
 
 		select {
