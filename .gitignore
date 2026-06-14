@@ -1,0 +1,63 @@
+
+# OS Generated Files
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon?
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.nfs*
+.directory
+.Trash-*
+
+# Build output directory
+bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+
+# Editor/IDE
+# .idea/
+.vscode/
+.qoder/
+
+# SPA / Node — keep Node's local artefacts out of version control.
+# The web dashboard bundle (internal/api/web/dist/) is NOT committed —
+# it is built on CI (`make web`) and downloaded as an artifact by build jobs,
+# or created as a minimal placeholder by the Makefile.
+web/node_modules/
+web/dist/
+internal/api/web/dist/
+web/.vite/
+*.tsbuildinfo
+tobimaru.db

@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libpcap
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Create placeholder web dist
+        run: mkdir -p internal/api/web/dist && echo '<!doctype html><title>Tobimaru</title>' > internal/api/web/dist/index.html
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: "v2.12.2"
+          args: --timeout=5m ./...
+
+  web:
+    name: Web (Vite build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install SPA dependencies
+        run: cd web && npm install --no-audit --no-fund
+
+      - name: Build SPA
+        run: cd web && npm run build
+
+      - name: Lint SPA
+        run: cd web && npm run lint
+
+      - name: Upload built SPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: internal/api/web/dist
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libpcap
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Create placeholder web dist
+        run: mkdir -p internal/api/web/dist && echo '<!doctype html><title>Tobimaru</title>' > internal/api/web/dist/index.html
+
+      - name: Test
+        run: go test -race -cover -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          flags: linux
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    name: "Build (${{ matrix.goos }}/${{ matrix.goarch }})"
+    runs-on: ${{ matrix.runson }}
+    needs: [web]
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runson: ubuntu-latest
+          - goos: linux
+            goarch: arm64
+            runson: ubuntu-24.04-arm
+          - goos: darwin
+            goarch: arm64
+            runson: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libpcap
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Download web dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/api/web/dist
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          COMMIT_SHORT=$(echo "${COMMIT}" | cut -c1-7)
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          go build -ldflags "-s -w \
+            -X github.com/vkochetkov/tobimaru/internal/version.Version=${VERSION} \
+            -X github.com/vkochetkov/tobimaru/internal/version.Commit=${COMMIT_SHORT} \
+            -X github.com/vkochetkov/tobimaru/internal/version.Date=${DATE}" \
+            -o tobimaru-${GOOS}-${GOARCH} ./cmd/tobimaru
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tobimaru-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: tobimaru-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    needs: [web]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Download web dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: internal/api/web/dist
+
+      - name: Test
+        env:
+          CGO_LDFLAGS: -Wl,-no_warn_duplicate_libraries
+        run: go test -race -cover -coverprofile=coverage-macos.out ./...
+
+      - name: Build native
+        run: go build -o tobimaru-macos ./cmd/tobimaru
+
+      - name: Smoke test (--version)
+        run: ./tobimaru-macos --version
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-macos
+          path: coverage-macos.out
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-macos.out
+          flags: macos
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

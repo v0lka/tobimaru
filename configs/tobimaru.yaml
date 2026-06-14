@@ -1,0 +1,127 @@
+# Tobimaru WiFi Watchdog configuration
+#
+# Platform-specific notes:
+#
+#   Linux:
+#     - interface: typically wlan0, wlp2s0, or similar (use `iw dev` to list)
+#     - dwell: 300ms is fine for fast channel switching via iw
+#
+#   macOS:
+#     - interface: typically en0 (use `ifconfig` to find the Wi-Fi interface)
+#     - dwell: recommended 2s or more — channel switching has 1-3s overhead
+#     - Must be run as root (BPF device permissions)
+#     - Must disconnect from WiFi before capturing on the same adapter
+#     - Channel hopping auto-detects supported channels via CoreWLAN;
+#       DFS channels (100–128) excluded automatically when unsupported
+#     - No frame injection (active countermeasures not available)
+#     - See docs/development/macos-setup.md for detailed setup instructions
+
+log:
+  level: debug # debug, info, warn, error
+  format: text # text, json
+
+monitor:
+  interface: "en0" # WiFi interface name (e.g., wlan0)
+  capture:
+    snaplen: 65535
+    buffer_size: 2097152
+    frame_buffer_size: 1024
+    promiscuous: true
+    timeout: 100ms
+  channel_hopping:
+    enabled: true
+    dwell: 2s
+    weighted_dwell:
+      enabled: true
+      primary_channels: [1, 6, 11] # channels with extended dwell time
+      multiplier: 2.5 # time multiplier for primary channels
+    # channels_2ghz and channels_5ghz are optional. When omitted, the daemon
+    # auto-detects supported channels from hardware (macOS via CoreWLAN) or
+    # falls back to built-in defaults (Linux: 1–13 and non-DFS 5 GHz).
+    # Uncomment to restrict hopping to a specific subset:
+    # channels_2ghz: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+    # channels_5ghz: [36, 40, 44, 48, 149, 153, 157, 161, 165]
+    include_5ghz: true
+
+detection:
+  enabled: true # master switch for detection engine (all rules implemented; off by default for low-impact capture)
+  dedup_window: 30s # suppress duplicate alerts within this window
+  alert_buffer_size: 256 # buffered alerts channel capacity
+  deauth_flood:
+    enabled: true
+    threshold: 10
+    window: 10s
+
+  disassoc_flood:
+    enabled: true
+    threshold: 10
+    window: 10s
+
+  beacon_flood:
+    enabled: true
+    threshold: 50
+    window: 10s
+    learning_period: 60s
+
+  evil_twin:
+    enabled: true
+    score_threshold: 80
+    stale_timeout: 5m
+    learning_period: 60s
+    min_beacons: 3
+
+  unauthorized_device:
+    enabled: false
+    protected_bssids: []
+    protected_ssids: []
+    whitelist: []
+    alert_on_probe: false
+    cooldown: 5m
+
+state:
+  # Network state tracking maintains an in-memory map of observed APs and
+  # clients. Required for auto-learning, snapshots, and stateful detection.
+  # Increases memory and CPU footprint vs. raw capture.
+  enabled: true # master switch for network state tracking
+  ttl: 10m # remove APs/clients not seen for this duration (0 → use built-in default)
+  sweep_interval: 1m # how often to check for stale entries (0 → use built-in default)
+
+whitelist:
+  auto_learning:
+    # When enabled, every device observed during "duration" is added to the
+    # in-memory whitelist (and persisted if storage.enabled).
+    enabled: false # activate learning mode at startup
+    duration: 15m # learning phase duration (0 → use built-in default)
+
+storage:
+  # Persistent storage uses a pure-Go SQLite database (ADR 004). When
+  # enabled, the file is created (or chmod-ed) with mode 0600 to keep
+  # captured security events and snapshots out of reach of other users.
+  enabled: true # master switch for SQLite persistence
+  path: "tobimaru.db" # SQLite database file path (created with 0600 perms)
+  snapshot_interval: 5m # how often to persist AP/client state (0 → use built-in default)
+  max_snapshots: 288 # keep ~24h of snapshots at 5m intervals (0 → use built-in default)
+  max_events: 100000 # max security events to retain (pruned every 100 inserts; 0 → use built-in default)
+
+api:
+  # HTTP API + embedded React dashboard. Disabled by default.
+  # When enabled together with auth, the SPA is served on listen and the API
+  # is mounted under /api/. Sessions are persisted in the SQLite database, so
+  # storage.enabled MUST be true when api.auth.enabled is true.
+  enabled: true
+  listen: "127.0.0.1:9090" # bind loopback by default; use a reverse proxy for remote access
+  read_timeout: 15s
+  write_timeout: 30s # SSE connections override this per-request
+  idle_timeout: 60s
+  shutdown_timeout: 5s
+  cors:
+    allowed_origins: [] # empty = same-origin only
+  auth:
+    enabled: false # set false for local development only
+    session_ttl: 24h
+    # cookie_secure: true         # set false ONLY for plain-HTTP loopback dev; default is true (HTTPS)
+    # Generate hashes with: tobimaru -hash-password <plaintext>
+    # The daemon only accepts bcrypt hashes (never plaintext passwords).
+    # Run the command, copy the output, paste it below.
+    admin_password_hash: "" # bcrypt hash; required when auth.enabled is true
+    user_password_hash: "" # optional read-only account; empty disables it
